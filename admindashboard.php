@@ -14,8 +14,8 @@ if ($_SESSION['role'] !== 'admin') {
 }
 
 // Load environment variables
-//$dotenv = Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -176,6 +176,7 @@ $employees = json_decode($response, true);
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard</title>
+   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -438,4 +439,3 @@ $(document).ready(function(){
 </div>
 </body>
 </html>
-

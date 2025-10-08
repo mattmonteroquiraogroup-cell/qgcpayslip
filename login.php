@@ -6,8 +6,8 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
 // Load .env
-//$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -92,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     curl_exec($ch);
     curl_close($ch);
 
-    $resetLink = "https://payslip-nhmm.onrender.com/set_password.php?token=$token";
+    $resetLink = "http://localhost/qgcpayslip/set_password.php?token=$token";
 
     // 🕒 Added: readable expiration time for PH timezone
     $expiresPH = new DateTime($expires);
@@ -188,21 +188,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Payslip Login</title>
+  <title>QGC Payslip Portal</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <style>
     body {
-      margin: 0; padding: 0;
+      margin: 0;
+      padding: 0;
       font-family: 'Segoe UI', sans-serif;
       background: linear-gradient(135deg, #f8f9fa, #e9ecef);
       height: 100vh;
-      display: flex; align-items: center; justify-content: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
+
     .login-card {
       background: #fff;
       padding: 2.5rem;
@@ -212,45 +216,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       max-width: 420px;
       text-align: center;
     }
+
+    /* 🔧 tightened space between logo and heading */
     .login-card img {
-      margin-bottom: 1.5rem;
-      
+      display: block;
+      margin: 0 auto 0.25rem; /* only 4px bottom gap */
     }
+
     .login-card h1 {
       font-size: 1.8rem;
-      margin-bottom: .5rem;
+      margin-top: 0;          /* remove top space */
+      margin-bottom: 0.4rem;  /* small gap below */
       color: #212529;
     }
+
     .login-card p {
       font-size: 0.95rem;
       color: #6c757d;
-      margin-bottom: 2rem;
+      margin-top: 0;
+      margin-bottom: 1.8rem;
     }
+
     .form-group {
       text-align: left;
       margin-bottom: 1.5rem;
     }
+
     .form-label {
       font-weight: 500;
       margin-bottom: .5rem;
       display: block;
       color: #212529;
     }
-   .form-input {
-  width: 100%;
-  padding: 0.9rem 1rem;   /* increase padding a little */
-  border: 1.8px solid #dee2e6;
-  border-radius: 10px;
-  font-size: 1rem;
-  line-height: 1.4rem;    /* ensures text is vertically centered */
-  box-sizing: border-box;
-  transition: all 0.2s ease;
+
+    .form-input {
+      width: 100%;
+      padding: 0.9rem 1rem;
+      border: 1.8px solid #dee2e6;
+      border-radius: 10px;
+      font-size: 1rem;
+      line-height: 1.4rem;
+      box-sizing: border-box;
+      transition: all 0.2s ease;
     }
+
     .form-input:focus {
       border-color: #495057;
       box-shadow: 0 0 0 3px rgba(33,37,41,0.1);
       outline: none;
     }
+
     .login-button {
       width: 100%;
       padding: 0.9rem;
@@ -263,10 +278,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       cursor: pointer;
       transition: background .2s, transform .2s;
     }
+
     .login-button:hover {
       background: #495057;
       transform: translateY(-1px);
     }
+
     .error {
       color: #dc3545;
       margin-bottom: 1rem;
@@ -276,7 +293,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
   <div class="login-card">
-    <img src="qgc.png" alt="QGC Logo" width="90" height="45">
+    <img src="favicon.svg" alt="QGC Logo" width="150" height="75">
     <h1>Payslip Portal</h1>
     <p>Sign in to access your account</p>
 
@@ -285,12 +302,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php endif; ?>
 
     <form method="POST">
-<div class="form-group">
-  <label class="form-label" for="user_id">ID</label>
-  <input type="text" name="employee_id" id="user_id" class="form-input"
-         value="<?= ($step == 2) ? htmlspecialchars($_SESSION['temp_user']) : '' ?>"
-         placeholder="Enter your ID" <?= ($step==2) ? "readonly" : "" ?> required>
-</div>
+      <div class="form-group">
+        <label class="form-label" for="user_id">ID</label>
+        <input type="text" name="employee_id" id="user_id" class="form-input"
+               value="<?= ($step == 2) ? htmlspecialchars($_SESSION['temp_user']) : '' ?>"
+               placeholder="Enter your ID"
+               <?= ($step==2) ? "readonly" : "" ?> required>
+      </div>
+
       <?php if ($step == 2): ?>
       <div class="form-group">
         <label class="form-label" for="password">Password</label>
@@ -306,5 +325,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </div>
 </body>
 </html>
-
-
