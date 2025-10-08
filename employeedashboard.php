@@ -8,8 +8,8 @@ if (!isset($_SESSION['employee_id'])) {
     exit;
 }
 
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+//$dotenv = Dotenv::createImmutable(__DIR__);
+//$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -198,3 +198,4 @@ function toggleSidebar() {
 
 </body>
 </html>
+
