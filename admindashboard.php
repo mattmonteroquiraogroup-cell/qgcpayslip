@@ -14,8 +14,8 @@ if ($_SESSION['role'] !== 'admin') {
 }
 
 // Load environment variables
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+//$dotenv = Dotenv::createImmutable(__DIR__);
+//$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -438,3 +438,4 @@ $(document).ready(function(){
 </div>
 </body>
 </html>
+
