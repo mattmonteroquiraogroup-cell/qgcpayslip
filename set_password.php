@@ -3,8 +3,8 @@ session_start();
 
 require __DIR__ . '/vendor/autoload.php';
 
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+//$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+//$dotenv->load();
 
 // Supabase config from .env
 $projectUrl = $_ENV['SUPABASE_URL'];
@@ -283,3 +283,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 </body>
 </html>
+
