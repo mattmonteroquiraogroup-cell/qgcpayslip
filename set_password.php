@@ -1,79 +1,57 @@
 <?php
 session_start();
-
 require __DIR__ . '/vendor/autoload.php';
 
 //$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 //$dotenv->load();
 
-// Supabase config from .env
+// Supabase config
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
 
-// Flags to trigger modals
+// Flags for modals
 $showSuccess = false;
 $showWarning = false;
 $warningMessage = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $token        = $_POST['token'] ?? '';
-    $new_password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+    $token        = $_POST['access_token'] ?? '';
+    $new_password = $_POST['password'] ?? '';
 
     if (!$token) {
         $showWarning = true;
-        $warningMessage = "Invalid request. No token provided.";
+        $warningMessage = "Invalid or missing token.";
+    } elseif (!$new_password) {
+        $showWarning = true;
+        $warningMessage = "Please enter a new password.";
     } else {
-        // 1. Fetch employee by reset_token
-        $url = $projectUrl . "/rest/v1/employees_credentials"
-             . "?reset_token=eq." . urlencode($token)
-             . "&select=employee_id,reset_token_expires";
+        // Supabase Auth: update password using the access token
+        $url = $projectUrl . "/auth/v1/user";
+        $payload = json_encode(["password" => $new_password]);
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "apikey: $apiKey",
-            "Authorization: Bearer $apiKey"
+            "Authorization: Bearer $token",
+            "Content-Type: application/json"
         ]);
         $response = curl_exec($ch);
+        $error = curl_error($ch);
         curl_close($ch);
-        $data = json_decode($response, true);
 
-        if (empty($data)) {
+        if ($error) {
             $showWarning = true;
-            $warningMessage = "Invalid or expired reset link.";
+            $warningMessage = "Network error: " . htmlspecialchars($error);
         } else {
-            $user = $data[0];
-
-            // 2. Check if token expired
-            if (strtotime($user['reset_token_expires']) < time()) {
-                $showWarning = true;
-                $warningMessage = "Reset link expired. Please request a new one.";
-            } else {
-                // 3. Update password and clear token
-                $url = $projectUrl . "/rest/v1/employees_credentials"
-                     . "?employee_id=eq." . urlencode($user['employee_id']);
-
-                $payload = json_encode([
-                    "password" => $new_password,
-                    "password_set_timestamp" => date("c"),
-                    "reset_token" => null,
-                    "reset_token_expires" => null
-                ]);
-
-                $ch = curl_init($url);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PATCH");
-                curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-                curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                    "apikey: $apiKey",
-                    "Authorization: Bearer $apiKey",
-                    "Content-Type: application/json",
-                    "Prefer: return=representation"
-                ]);
-                $result = curl_exec($ch);
-                curl_close($ch);
-
+            $result = json_decode($response, true);
+            if (isset($result['id'])) {
                 $showSuccess = true;
+            } else {
+                $showWarning = true;
+                $warningMessage = "Failed to reset password. The link may have expired.";
             }
         }
     }
@@ -245,7 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <p>Please enter your new password to continue</p>
 
     <form method="POST">
-      <input type="hidden" name="token" value="<?php echo htmlspecialchars($_GET['token'] ?? ''); ?>">
+      <input type="hidden" name="access_token" id="tokenField">
       <div class="form-group">
         <label for="password">New Password</label>
         <input type="password" id="password" name="password" placeholder="Enter new password" required>
@@ -274,13 +252,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <?php if ($showWarning): ?>
   <div class="modal-overlay">
     <div class="modal-box warning">
-      <h3>Oops! Link Expired</h3>
+      <h3>Oops!</h3>
       <p><?php echo htmlspecialchars($warningMessage); ?></p>
-      <a href="login.php">Log in Again</a>
+      <a href="login.php">Back to Login</a>
     </div>
   </div>
   <?php endif; ?>
 
+  <script>
+    // Extract Supabase access token from URL fragment (#access_token=...)
+    const params = new URLSearchParams(window.location.hash.substring(1));
+    const token = params.get("access_token");
+    if (token) document.getElementById("tokenField").value = token;
+  </script>
+
 </body>
 </html>
-
