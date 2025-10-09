@@ -92,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     curl_exec($ch);
     curl_close($ch);
 
-    $resetLink = "http://localhost/qgcpayslip/set_password.php?token=$token";
+    $resetLink = "https://qgcpayslip.onrender.com/set_password.php?token=$token";
 
     // 🕒 Added: readable expiration time for PH timezone
     $expiresPH = new DateTime($expires);
@@ -325,4 +325,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </div>
 </body>
 </html>
+
 
