@@ -73,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // ✅ Display local time (Philippines)
                     $expiresDisplay = new DateTime($expires, new DateTimeZone('UTC'));
                     $expiresDisplay->setTimezone(new DateTimeZone('Asia/Manila'));
-                    $expiresDisplayFormatted = $expiresDisplay->format('F j, Y g:i A');
+                    $expiresDisplayFormatted = $expiresDisplay->format('F j, Y');
 
                     // Store token in Supabase
                     $url = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <p>Please click the link below to set your password:</p>
                                 <p><a href='$resetLink'>$resetLink</a></p>
                                 <p>This link expires on <b>$expiresDisplayFormatted</b>.</p>
-                                <p>Thank you,<br>Payslip Portal Team</p>"
+                                <p>Thank you.</p>"
                         ]);
 
                         $apiInstance->sendTransacEmail($sendSmtpEmail);
@@ -403,5 +403,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </div>
 </body>
 </html>
+
 
 
