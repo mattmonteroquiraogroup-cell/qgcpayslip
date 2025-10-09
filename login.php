@@ -204,16 +204,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <title>QGC Payslip Portal</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <style>
+    :root {
+      --bg-light: #f8f9fa;
+      --bg-lighter: #e9ecef;
+      --text-dark: #212529;
+      --text-muted: #6c757d;
+      --border-color: #dee2e6;
+      --btn-bg: #212529;
+      --btn-hover: #495057;
+      --error-color: #dc3545;
+    }
+
     body {
       margin: 0;
       padding: 0;
       font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-      height: 100vh;
+      background: linear-gradient(135deg, var(--bg-light), var(--bg-lighter));
+      min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
     }
+
     .login-card {
       background: #fff;
       padding: 2.5rem;
@@ -222,52 +234,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       width: 100%;
       max-width: 420px;
       text-align: center;
+      box-sizing: border-box;
     }
+
     .login-card img {
       display: block;
       margin: 0 auto 0.25rem;
+      width: 150px;
+      height: auto;
     }
+
     .login-card h1 {
       font-size: 1.8rem;
       margin-top: 0;
       margin-bottom: 0.4rem;
-      color: #212529;
+      color: var(--text-dark);
     }
+
     .login-card p {
       font-size: 0.95rem;
-      color: #6c757d;
+      color: var(--text-muted);
       margin-top: 0;
       margin-bottom: 1.8rem;
     }
+
     .form-group {
       text-align: left;
       margin-bottom: 1.5rem;
     }
+
     .form-label {
       font-weight: 500;
       margin-bottom: .5rem;
       display: block;
-      color: #212529;
+      color: var(--text-dark);
     }
+
     .form-input {
       width: 100%;
       padding: 0.9rem 1rem;
-      border: 1.8px solid #dee2e6;
+      border: 1.8px solid var(--border-color);
       border-radius: 10px;
       font-size: 1rem;
       line-height: 1.4rem;
       box-sizing: border-box;
       transition: all 0.2s ease;
     }
+
     .form-input:focus {
-      border-color: #495057;
+      border-color: var(--btn-hover);
       box-shadow: 0 0 0 3px rgba(33,37,41,0.1);
       outline: none;
     }
+
     .login-button {
       width: 100%;
       padding: 0.9rem;
-      background: #212529;
+      background: var(--btn-bg);
       color: #fff;
       border: none;
       border-radius: 10px;
@@ -276,10 +299,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       cursor: pointer;
       transition: background .2s, transform .2s;
     }
+
     .login-button:hover {
-      background: #495057;
+      background: var(--btn-hover);
       transform: translateY(-1px);
     }
+
     .forgot {
       display: block;
       margin-top: 1rem;
@@ -287,17 +312,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       color: #0d6efd;
       text-decoration: none;
     }
-    .forgot:hover { text-decoration: underline; }
+
+    .forgot:hover {
+      text-decoration: underline;
+    }
+
     .error {
-      color: #dc3545;
+      color: var(--error-color);
       margin-bottom: 1rem;
       font-weight: 500;
+    }
+
+    /* ✅ Responsive adjustments */
+    @media (max-width: 768px) {
+      body {
+        padding: 1.5rem;
+        align-items: flex-start;
+        background: var(--bg-lighter);
+      }
+
+      .login-card {
+        padding: 2rem;
+        max-width: 100%;
+        margin-top: 5vh;
+      }
+
+      .login-card h1 {
+        font-size: 1.6rem;
+      }
+
+      .login-card p {
+        font-size: 0.9rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .login-card {
+        padding: 1.5rem;
+        border-radius: 12px;
+      }
+
+      .form-input {
+        padding: 0.75rem;
+        font-size: 0.95rem;
+      }
+
+      .login-button {
+        padding: 0.8rem;
+        font-size: 0.95rem;
+      }
+
+      .login-card img {
+        width: 120px;
+      }
     }
   </style>
 </head>
 <body>
   <div class="login-card">
-    <img src="favicon.svg" alt="QGC Logo" width="150" height="75">
+    <img src="favicon.svg" alt="QGC Logo">
     <h1>Payslip Portal</h1>
     <p>Sign in to access your account</p>
 
@@ -330,4 +403,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </div>
 </body>
 </html>
+
 
