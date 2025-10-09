@@ -2,10 +2,6 @@
 session_start();
 require __DIR__ . '/vendor/autoload.php';
 
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
-
-// Load .env
 //$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
 //$dotenv->load();
 
@@ -16,13 +12,12 @@ $message = "";
 $step    = 1; // Step control
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $user_id  = $_POST['employee_id'] ?? '';
+    $user_id  = trim($_POST['employee_id'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    if ($user_id && !$password) {
-        // 🔹 Step 1: First, check Admin table
-        $url = $projectUrl . "/rest/v1/admin_credentials?admin_id=eq." . urlencode($user_id);
-
+    // If user clicked "Forgot Password"
+    if (isset($_POST['forgot_password']) && $user_id) {
+        $url = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
@@ -32,19 +27,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         $response = curl_exec($ch);
         curl_close($ch);
+        $empData = json_decode($response, true);
 
+        if (empty($empData)) {
+            $message = "Employee ID not found.";
+        } else {
+            $email = $empData[0]['email'];
+            // Trigger Supabase reset email
+            $recoverUrl = $projectUrl . "/auth/v1/recover";
+            $payload = json_encode([
+                "email" => $email,
+                "redirect_to" => "https://qgcpayslip.onrender.com/set_password.php"
+            ]);
+
+            $ch = curl_init($recoverUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                "apikey: $apiKey",
+                "Authorization: Bearer $apiKey",
+                "Content-Type: application/json"
+            ]);
+            $response = curl_exec($ch);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            if ($error) {
+                $message = "Error sending reset email: $error";
+            } else {
+                $message = "A password reset link has been sent to your email.";
+            }
+        }
+    }
+
+    // Step 1: User enters ID (check Admin/Employee)
+    elseif ($user_id && !$password) {
+        // 1️⃣ Check Admin table
+        $url = $projectUrl . "/rest/v1/admin_credentials?admin_id=eq." . urlencode($user_id);
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "apikey: $apiKey",
+            "Authorization: Bearer $apiKey",
+            "Content-Type: application/json"
+        ]);
+        $response = curl_exec($ch);
+        curl_close($ch);
         $adminData = json_decode($response, true);
 
         if (!empty($adminData)) {
-            // ✅ Found in admin table
-            $user = $adminData[0];
             $_SESSION['login_role'] = 'admin';
             $_SESSION['temp_user']  = $user_id;
-            $step = 2; // ask for password
+            $step = 2;
         } else {
-            // 🔹 Step 1: Check Employees table
+            // 2️⃣ Check Employee table
             $url = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
-
             $ch = curl_init($url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
@@ -54,7 +92,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $response = curl_exec($ch);
             curl_close($ch);
-
             $empData = json_decode($response, true);
 
             if (empty($empData)) {
@@ -62,85 +99,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $user = $empData[0];
 
-              if (empty($user['password'])) {
+                // If password not yet set — trigger Supabase Auth email
+                if (empty($user['password'])) {
+                    $email = $user['email'];
+                    $recoverUrl = $projectUrl . "/auth/v1/recover";
 
-    // 🕒 Set timezone to Philippine Time
-    date_default_timezone_set('Asia/Manila');
+                    $payload = json_encode([
+                        "email" => $email,
+                        "redirect_to" => "https://qgcpayslip.onrender.com/set_password.php"
+                    ]);
 
-    // Send reset email
-    $token   = bin2hex(random_bytes(16));
+                    $ch = curl_init($recoverUrl);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_POST, true);
+                    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+                    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                        "apikey: $apiKey",
+                        "Authorization: Bearer $apiKey",
+                        "Content-Type: application/json"
+                    ]);
 
-    // ⏱ Changed: expires in 1 minute (PH time)
-    $expires = date("c", strtotime("+1 minute"));
+                    $response = curl_exec($ch);
+                    $error = curl_error($ch);
+                    curl_close($ch);
 
-    $url = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
-    $payload = json_encode([
-        "reset_token" => $token,
-        "reset_token_expires" => $expires
-    ]);
-
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PATCH");
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "apikey: $apiKey",
-        "Authorization: Bearer $apiKey",
-        "Content-Type: application/json",
-        "Prefer: return=representation"
-    ]);
-    curl_exec($ch);
-    curl_close($ch);
-
-    $resetLink = "https://qgcpayslip.onrender.com/set_password.php?token=$token";
-
-    // 🕒 Added: readable expiration time for PH timezone
-    $expiresPH = new DateTime($expires);
-    $expiresDisplay = $expiresPH->format('F j, Y '); // ex: October 6, 2025 10:55:47 AM
-
-    $mail = new PHPMailer(true);
-    try {
-        $mail->isSMTP();
-        $mail->Host       = $_ENV['SMTP_HOST'];
-        $mail->SMTPAuth   = true;
-        $mail->Username   = $_ENV['SMTP_USER'];
-        $mail->Password   = $_ENV['SMTP_PASS'];
-        $mail->SMTPSecure = $_ENV['SMTP_SECURE'];
-        $mail->Port       = $_ENV['SMTP_PORT'];
-
-        $mail->setFrom($_ENV['SMTP_USER'], $_ENV['SMTP_FROM_NAME']);
-        $mail->addAddress($user['email'], $user['complete_name']);
-
-        $mail->isHTML(true);
-        $mail->Subject = 'Set Your Password';
-        $mail->Body    = "Hello " . htmlspecialchars($user['complete_name']) . ",<br><br>
-            Please click the link below to set your password:<br>
-            <a href='$resetLink'>$resetLink</a><br><br>
-            This link expires in <b>1 minute<br>
-            Expiration time: <b>$expiresDisplay<br><br>
-            Thank you.";
-
-        $mail->send();
-        $message = "A password setup link has been sent to your email.";
-    } catch (Exception $e) {
-        $message = "Email error: " . $mail->ErrorInfo;
-    }
+                    if ($error) {
+                        $message = "Error sending setup email: $error";
+                    } else {
+                        $message = "A password setup link has been sent to your email.";
+                    }
                 } else {
                     $_SESSION['login_role'] = 'employee';
                     $_SESSION['temp_user']  = $user_id;
-                    $step = 2; // ask for password
+                    $step = 2;
                 }
             }
         }
-    } elseif ($password && isset($_SESSION['temp_user'])) {
-        // 🔹 Step 2: Verify login
-        $user_id = $_SESSION['temp_user'];
+    }
 
-        if ($_SESSION['login_role'] === 'admin') {
-            $url = $projectUrl . "/rest/v1/admin_credentials?admin_id=eq." . urlencode($user_id);
-        } else {
-            $url = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
-        }
+    // Step 2: User enters password
+    elseif ($password && isset($_SESSION['temp_user'])) {
+        $user_id = $_SESSION['temp_user'];
+        $role = $_SESSION['login_role'];
+
+        $url = ($role === 'admin')
+            ? $projectUrl . "/rest/v1/admin_credentials?admin_id=eq." . urlencode($user_id)
+            : $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -151,36 +155,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         $response = curl_exec($ch);
         curl_close($ch);
-
         $data = json_decode($response, true);
-        $user = $data[0];
+        $user = $data[0] ?? null;
 
-        if ($_SESSION['login_role'] === 'admin') {
-            // ✅ Admin check (if password stored hashed, switch to password_verify)
-            if ($password === $user['password']) {
-                $_SESSION['admin_id']      = $user['admin_id'];
-                $_SESSION['complete_name'] = $user['complete_name'];
-                $_SESSION['role']          = 'admin';
-                unset($_SESSION['temp_user'], $_SESSION['login_role']);
-                header("Location: admindashboard.php");
-                exit;
-            } else {
-                $message = "Invalid admin password.";
-                $step = 2;
-            }
+        if (!$user) {
+            $message = "User not found.";
+            $step = 1;
         } else {
-            // ✅ Employee check
-            if (password_verify($password, $user['password'])) {
-                $_SESSION['employee_id']   = $user['employee_id'];
-                $_SESSION['complete_name'] = $user['complete_name'];
-                $_SESSION['subsidiary'] = $user['subsidiary'];  // save subsidiary info
-                $_SESSION['role']          = 'employee';
-                unset($_SESSION['temp_user'], $_SESSION['login_role']);
-                header("Location: employeedashboard.php");
-                exit;
+            if ($role === 'admin') {
+                if ($password === $user['password']) {
+                    $_SESSION['admin_id']      = $user['admin_id'];
+                    $_SESSION['complete_name'] = $user['complete_name'];
+                    $_SESSION['role']          = 'admin';
+                    unset($_SESSION['temp_user'], $_SESSION['login_role']);
+                    header("Location: admindashboard.php");
+                    exit;
+                } else {
+                    $message = "Invalid admin password.";
+                    $step = 2;
+                }
             } else {
-                $message = "Invalid password.";
-                $step = 2;
+                if (password_verify($password, $user['password'])) {
+                    $_SESSION['employee_id']   = $user['employee_id'];
+                    $_SESSION['complete_name'] = $user['complete_name'];
+                    $_SESSION['subsidiary']    = $user['subsidiary'];
+                    $_SESSION['role']          = 'employee';
+                    unset($_SESSION['temp_user'], $_SESSION['login_role']);
+                    header("Location: employeedashboard.php");
+                    exit;
+                } else {
+                    $message = "Invalid password.";
+                    $step = 2;
+                }
             }
         }
     } else {
@@ -188,6 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -206,7 +213,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       align-items: center;
       justify-content: center;
     }
-
     .login-card {
       background: #fff;
       padding: 2.5rem;
@@ -216,39 +222,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       max-width: 420px;
       text-align: center;
     }
-
-    /* 🔧 tightened space between logo and heading */
     .login-card img {
       display: block;
-      margin: 0 auto 0.25rem; /* only 4px bottom gap */
+      margin: 0 auto 0.25rem;
     }
-
     .login-card h1 {
       font-size: 1.8rem;
-      margin-top: 0;          /* remove top space */
-      margin-bottom: 0.4rem;  /* small gap below */
+      margin-top: 0;
+      margin-bottom: 0.4rem;
       color: #212529;
     }
-
     .login-card p {
       font-size: 0.95rem;
       color: #6c757d;
       margin-top: 0;
       margin-bottom: 1.8rem;
     }
-
     .form-group {
       text-align: left;
       margin-bottom: 1.5rem;
     }
-
     .form-label {
       font-weight: 500;
       margin-bottom: .5rem;
       display: block;
       color: #212529;
     }
-
     .form-input {
       width: 100%;
       padding: 0.9rem 1rem;
@@ -259,13 +258,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       box-sizing: border-box;
       transition: all 0.2s ease;
     }
-
     .form-input:focus {
       border-color: #495057;
       box-shadow: 0 0 0 3px rgba(33,37,41,0.1);
       outline: none;
     }
-
     .login-button {
       width: 100%;
       padding: 0.9rem;
@@ -278,12 +275,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       cursor: pointer;
       transition: background .2s, transform .2s;
     }
-
     .login-button:hover {
       background: #495057;
       transform: translateY(-1px);
     }
-
+    .forgot {
+      display: block;
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      color: #0d6efd;
+      text-decoration: none;
+    }
+    .forgot:hover { text-decoration: underline; }
     .error {
       color: #dc3545;
       margin-bottom: 1rem;
@@ -307,7 +310,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <input type="text" name="employee_id" id="user_id" class="form-input"
                value="<?= ($step == 2) ? htmlspecialchars($_SESSION['temp_user']) : '' ?>"
                placeholder="Enter your ID"
-               <?= ($step==2) ? "readonly" : "" ?> required>
+               <?= ($step == 2) ? "readonly" : "" ?> required>
       </div>
 
       <?php if ($step == 2): ?>
@@ -321,9 +324,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <button type="submit" class="login-button">
         <?= ($step == 1) ? "Next" : "Log In" ?>
       </button>
+
     </form>
   </div>
 </body>
 </html>
-
-
