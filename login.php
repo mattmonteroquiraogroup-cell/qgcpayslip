@@ -2,75 +2,36 @@
 session_start();
 require __DIR__ . '/vendor/autoload.php';
 
-//$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+use Brevo\Client\Configuration;
+use Brevo\Client\Api\TransactionalEmailsApi;
+use Brevo\Client\Model\SendSmtpEmail;
+use GuzzleHttp\Client;
+
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
 
 $message = "";
-$step    = 1; // Step control
+$step    = 1;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $user_id  = trim($_POST['employee_id'] ?? '');
+    $user_id  = $_POST['employee_id'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    // If user clicked "Forgot Password"
-    if (isset($_POST['forgot_password']) && $user_id) {
-        $url = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
+    // STEP 1️⃣ — User ID entered
+    if ($user_id && !$password) {
+        // Check Admin table first
+        $url = $projectUrl . "/rest/v1/admin_credentials?admin_id=eq." . urlencode($user_id);
         $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "apikey: $apiKey",
-            "Authorization: Bearer $apiKey",
-            "Content-Type: application/json"
-        ]);
-        $response = curl_exec($ch);
-        curl_close($ch);
-        $empData = json_decode($response, true);
-
-        if (empty($empData)) {
-            $message = "Employee ID not found.";
-        } else {
-            $email = $empData[0]['email'];
-            // Trigger Supabase reset email
-            $recoverUrl = $projectUrl . "/auth/v1/recover";
-            $payload = json_encode([
-                "email" => $email,
-                "redirect_to" => "https://qgcpayslip.onrender.com/set_password.php"
-            ]);
-
-            $ch = curl_init($recoverUrl);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
                 "apikey: $apiKey",
                 "Authorization: Bearer $apiKey",
                 "Content-Type: application/json"
-            ]);
-            $response = curl_exec($ch);
-            $error = curl_error($ch);
-            curl_close($ch);
-
-            if ($error) {
-                $message = "Error sending reset email: $error";
-            } else {
-                $message = "A password reset link has been sent to your email.";
-            }
-        }
-    }
-
-    // Step 1: User enters ID (check Admin/Employee)
-    elseif ($user_id && !$password) {
-        // 1️⃣ Check Admin table
-        $url = $projectUrl . "/rest/v1/admin_credentials?admin_id=eq." . urlencode($user_id);
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "apikey: $apiKey",
-            "Authorization: Bearer $apiKey",
-            "Content-Type: application/json"
+            ]
         ]);
         $response = curl_exec($ch);
         curl_close($ch);
@@ -81,14 +42,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['temp_user']  = $user_id;
             $step = 2;
         } else {
-            // 2️⃣ Check Employee table
+            // Check Employee table
             $url = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
             $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                "apikey: $apiKey",
-                "Authorization: Bearer $apiKey",
-                "Content-Type: application/json"
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => [
+                    "apikey: $apiKey",
+                    "Authorization: Bearer $apiKey",
+                    "Content-Type: application/json"
+                ]
             ]);
             $response = curl_exec($ch);
             curl_close($ch);
@@ -99,34 +62,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $user = $empData[0];
 
-                // If password not yet set — trigger Supabase Auth email
+                // No password set — send password setup email
                 if (empty($user['password'])) {
-                    $email = $user['email'];
-                    $recoverUrl = $projectUrl . "/auth/v1/recover";
+                    $token   = bin2hex(random_bytes(16));
 
+                    // ✅ Always use UTC for expiration time (Supabase standard)
+                    date_default_timezone_set('UTC');
+                    $expires = gmdate("Y-m-d\TH:i:s\Z", strtotime("+3 hours"));
+
+                    // ✅ Display local time (Philippines)
+                    $expiresDisplay = new DateTime($expires, new DateTimeZone('UTC'));
+                    $expiresDisplay->setTimezone(new DateTimeZone('Asia/Manila'));
+                    $expiresDisplayFormatted = $expiresDisplay->format('F j, Y g:i A');
+
+                    // Store token in Supabase
+                    $url = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
                     $payload = json_encode([
-                        "email" => $email,
-                        "redirect_to" => "https://qgcpayslip.onrender.com/set_password.php"
+                        "reset_token" => $token,
+                        "reset_token_expires" => $expires
                     ]);
-
-                    $ch = curl_init($recoverUrl);
-                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                    curl_setopt($ch, CURLOPT_POST, true);
-                    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-                    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                        "apikey: $apiKey",
-                        "Authorization: Bearer $apiKey",
-                        "Content-Type: application/json"
+                    $ch = curl_init($url);
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_CUSTOMREQUEST => "PATCH",
+                        CURLOPT_POSTFIELDS => $payload,
+                        CURLOPT_HTTPHEADER => [
+                            "apikey: $apiKey",
+                            "Authorization: Bearer $apiKey",
+                            "Content-Type: application/json",
+                            "Prefer: return=representation"
+                        ]
                     ]);
-
-                    $response = curl_exec($ch);
-                    $error = curl_error($ch);
+                    curl_exec($ch);
                     curl_close($ch);
 
-                    if ($error) {
-                        $message = "Error sending setup email: $error";
-                    } else {
+                    // Build reset link
+                    $resetLink = "https://qgcpayslip.onrender.com/set_password.php?token=$token";
+
+                    // Send email via Brevo
+                    try {
+                        $config = Configuration::getDefaultConfiguration()
+                            ->setApiKey('api-key', $_ENV['BREVO_API_KEY']);
+                        $apiInstance = new TransactionalEmailsApi(new Client(), $config);
+
+                        $sendSmtpEmail = new SendSmtpEmail([
+                            'subject' => 'Set Your Password',
+                            'sender' => [
+                                'name' => $_ENV['BREVO_SENDER_NAME'],
+                                'email' => $_ENV['BREVO_SENDER_EMAIL']
+                            ],
+                            'to' => [[
+                                'email' => $user['email'],
+                                'name' => $user['complete_name']
+                            ]],
+                            'htmlContent' => "
+                                <p>Hello <b>{$user['complete_name']}</b>,</p>
+                                <p>Please click the link below to set your password:</p>
+                                <p><a href='$resetLink'>$resetLink</a></p>
+                                <p>This link expires on <b>$expiresDisplayFormatted</b>.</p>
+                                <p>Thank you,<br>Payslip Portal Team</p>"
+                        ]);
+
+                        $apiInstance->sendTransacEmail($sendSmtpEmail);
                         $message = "A password setup link has been sent to your email.";
+                    } catch (Exception $e) {
+                        $message = "Email sending failed: " . $e->getMessage();
                     }
                 } else {
                     $_SESSION['login_role'] = 'employee';
@@ -135,23 +135,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-    }
 
-    // Step 2: User enters password
-    elseif ($password && isset($_SESSION['temp_user'])) {
+    // STEP 2️⃣ — Password entered
+    } elseif ($password && isset($_SESSION['temp_user'])) {
         $user_id = $_SESSION['temp_user'];
         $role = $_SESSION['login_role'];
 
         $url = ($role === 'admin')
-            ? $projectUrl . "/rest/v1/admin_credentials?admin_id=eq." . urlencode($user_id)
-            : $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
+            ? "$projectUrl/rest/v1/admin_credentials?admin_id=eq." . urlencode($user_id)
+            : "$projectUrl/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
 
         $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "apikey: $apiKey",
-            "Authorization: Bearer $apiKey",
-            "Content-Type: application/json"
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                "apikey: $apiKey",
+                "Authorization: Bearer $apiKey",
+                "Content-Type: application/json"
+            ]
         ]);
         $response = curl_exec($ch);
         curl_close($ch);
@@ -164,9 +165,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             if ($role === 'admin') {
                 if ($password === $user['password']) {
-                    $_SESSION['admin_id']      = $user['admin_id'];
+                    $_SESSION['admin_id'] = $user['admin_id'];
                     $_SESSION['complete_name'] = $user['complete_name'];
-                    $_SESSION['role']          = 'admin';
+                    $_SESSION['role'] = 'admin';
                     unset($_SESSION['temp_user'], $_SESSION['login_role']);
                     header("Location: admindashboard.php");
                     exit;
@@ -176,10 +177,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } else {
                 if (password_verify($password, $user['password'])) {
-                    $_SESSION['employee_id']   = $user['employee_id'];
+                    $_SESSION['employee_id'] = $user['employee_id'];
                     $_SESSION['complete_name'] = $user['complete_name'];
-                    $_SESSION['subsidiary']    = $user['subsidiary'];
-                    $_SESSION['role']          = 'employee';
+                    $_SESSION['subsidiary'] = $user['subsidiary'];
+                    $_SESSION['role'] = 'employee';
                     unset($_SESSION['temp_user'], $_SESSION['login_role']);
                     header("Location: employeedashboard.php");
                     exit;

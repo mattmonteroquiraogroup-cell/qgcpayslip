@@ -2,8 +2,8 @@
 session_start();
 require __DIR__ . '/vendor/autoload.php';
 
-//$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 // Supabase config
 $projectUrl = $_ENV['SUPABASE_URL'];
@@ -25,33 +25,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $showWarning = true;
         $warningMessage = "Please enter a new password.";
     } else {
-        // Supabase Auth: update password using the access token
-        $url = $projectUrl . "/auth/v1/user";
-        $payload = json_encode(["password" => $new_password]);
-
+        // 🔹 Check if token exists in Supabase and is still valid
+        $url = $projectUrl . "/rest/v1/employees_credentials?reset_token=eq." . urlencode($token);
         $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "apikey: $apiKey",
-            "Authorization: Bearer $token",
-            "Content-Type: application/json"
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                "apikey: $apiKey",
+                "Authorization: Bearer $apiKey",
+                "Content-Type: application/json"
+            ]
         ]);
         $response = curl_exec($ch);
-        $error = curl_error($ch);
         curl_close($ch);
+        $data = json_decode($response, true);
 
-        if ($error) {
+        if (empty($data)) {
             $showWarning = true;
-            $warningMessage = "Network error: " . htmlspecialchars($error);
+            $warningMessage = "Invalid or missing token.";
         } else {
-            $result = json_decode($response, true);
-            if (isset($result['id'])) {
-                $showSuccess = true;
-            } else {
+            $user = $data[0];
+
+            // ✅ Make sure both are compared in UTC
+            date_default_timezone_set('UTC');
+            $currentTime = time();
+            $expiryTime  = strtotime($user['reset_token_expires']);
+
+            if ($currentTime > $expiryTime) {
                 $showWarning = true;
-                $warningMessage = "Failed to reset password. The link may have expired.";
+                $warningMessage = "Reset link has expired. Please request a new one.";
+            } else {
+                // 🔹 Hash the new password
+                $hashedPassword = password_hash($new_password, PASSWORD_BCRYPT);
+
+                // 🔹 Update password in Supabase
+                $updateUrl = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user['employee_id']);
+                $payload = json_encode([
+                    "password" => $hashedPassword,
+                    "reset_token" => null,
+                    "reset_token_expires" => null
+                ]);
+
+                $ch = curl_init($updateUrl);
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_CUSTOMREQUEST => "PATCH",
+                    CURLOPT_POSTFIELDS => $payload,
+                    CURLOPT_HTTPHEADER => [
+                        "apikey: $apiKey",
+                        "Authorization: Bearer $apiKey",
+                        "Content-Type: application/json",
+                        "Prefer: return=representation"
+                    ]
+                ]);
+                $updateResponse = curl_exec($ch);
+                curl_close($ch);
+
+                $showSuccess = true;
             }
         }
     }
@@ -152,7 +182,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       background: #333;
     }
 
-    /* Modal styling */
     .modal-overlay {
       position: fixed;
       top: 0; left: 0;
@@ -181,7 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     .modal-box.warning h3 {
-      color: #000000ff;
+      color: #000;
     }
 
     .modal-box p {
@@ -232,7 +261,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </form>
   </div>
 
-  <!-- SUCCESS MODAL -->
   <?php if ($showSuccess): ?>
   <div class="modal-overlay">
     <div class="modal-box success">
@@ -248,7 +276,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </script>
   <?php endif; ?>
 
-  <!-- WARNING MODAL -->
   <?php if ($showWarning): ?>
   <div class="modal-overlay">
     <div class="modal-box warning">
@@ -260,9 +287,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <?php endif; ?>
 
   <script>
-    // Extract Supabase access token from URL fragment (#access_token=...)
-    const params = new URLSearchParams(window.location.hash.substring(1));
-    const token = params.get("access_token");
+    // Automatically fill token from URL (?token=xxxx)
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
     if (token) document.getElementById("tokenField").value = token;
   </script>
 
