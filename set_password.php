@@ -94,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Set New Password</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <style>
     body {
       margin: 0;
@@ -292,7 +293,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     const token = params.get("token");
     if (token) document.getElementById("tokenField").value = token;
   </script>
-
 </body>
 </html>
-
