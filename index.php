@@ -16,9 +16,9 @@ $apiKey     = $_ENV['SUPABASE_KEY'];
 $employee_id = $_SESSION['employee_id'];
 $subsidiary  = strtoupper($_SESSION['subsidiary'] ?? 'QGC');
 
-// 🖼️ Map each subsidiary to its logo and color
+// Map each subsidiary to its logo and color
 $subsidiaryStyles = [
-    'QGC'              => ['logo' => 'qgc.png', 'color' => '#aaaaaaff'],
+    'QGC'              => ['logo' => 'QGC.png', 'color' => '#aaaaaaff'],
     'WATERGATE'        => ['logo' => 'WTG.png', 'color' => '#0284c7'],
     'SARI-SARI MANOKAN'=> ['logo' => 'PFC.png', 'color' => '#00973fff'],
     'PALUTO'           => ['logo' => 'PFC.png', 'color' => '#cc1800ff'],
@@ -27,6 +27,21 @@ $subsidiaryStyles = [
     'BMMI-WAREHOUSE'   => ['logo' => 'BMMI.png', 'color' => '#df6808ff'],
     'BMMI-DROPSHIPPING'=> ['logo' => 'BMMI.png', 'color' => '#df6808ff'],
 ];
+
+// Map subsidiary codes to full names
+$subsidiaryFullNames = [
+    'QGC'              => 'QUIRAO GROUP OF COMPANIES',
+    'BUILDMASTER'      => 'BUILDMASTER',
+    'BRIGHTLINE'       => 'BRIGHTLINE TRUCKING CORPORATION',
+    'WATERGATE'        => 'WATERGATE',
+    'SARI-SARI MANOKAN'=> 'PIGGLY FOODS CORPORATION',
+    'PALUTO'           => 'PIGGLY FOODS CORPORATION',
+    'COMMISSARY'       => 'PIGGLY FOODS CORPORATION',
+
+];
+
+// Define display name safely
+$subsidiaryDisplayName = $subsidiaryFullNames[$subsidiary] ?? strtoupper($subsidiary);
 
 // fallback if not found
 $logoPath = $subsidiaryStyles[$subsidiary]['logo'] ?? 'qgc.png';
@@ -177,7 +192,6 @@ $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
           </svg>
         </button>
       </div>
-
       <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
         <a
           href="employeedashboard.php"
@@ -265,21 +279,26 @@ $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
 
         <!-- Payslip Card -->
         <div
-          class="bg-white text-black rounded-xl shadow-lg w-full max-w-3xl p-8 overflow-x-auto"
-        >
+          class="bg-white text-black rounded-xl shadow-lg w-full max-w-3xl p-8 overflow-x-auto">
           <div class="text-center border-b border-gray-300 pb-4 mb-4">
-            <img
-              src="<?= htmlspecialchars($logoPath) ?>"
-              width="90"
-              height="45"
-              class="mx-auto mb-2"
-              alt="Logo"
-            />
-            <p class="text-sm text-gray-600">
-              Huervana St., Burgos-Mabini, La Paz, Iloilo City, 5000
-            </p>
-            <p class="text-sm text-gray-600">management@quiraogroup.com</p>
-          </div>
+  <div class="flex flex-col items-center justify-center leading-none">
+<img
+  src="<?= htmlspecialchars($logoPath) ?>"
+  width="70"
+  height="35"
+  class="mx-auto mb-0"
+  alt="Logo"
+/>
+<h2 class="text-lg font-bold text-black mt-0 mb-1 leading-tight">
+  <?= htmlspecialchars($subsidiaryDisplayName) ?>
+</h2>
+  </div>
+  <p class="text-sm text-gray-600">
+    Huervana St., Burgos-Mabini, La Paz, Iloilo City, 5000
+  </p>
+  <p class="text-sm text-gray-600">management@quiraogroup.com</p>
+</div>
+
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             <div class="bg-gray-100 p-3 rounded-md">
@@ -348,7 +367,6 @@ $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
                 ₱<?= number_format($selectedPayslip['total_compensation'] ?? 0, 2) ?>
               </p>
             </div>
-
             <div class="overflow-x-auto">
               <h3 class="font-semibold mb-2">Deductions</h3>
               <table class="w-full text-sm border-t border-gray-300">
@@ -363,7 +381,7 @@ $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
                   'less_sss' => 'SSS',
                   'less_phic' => 'PHIC',
                   'less_hdmf' => 'HDMF',
-                  'less_whtax' => 'Withholding Tax'
+                  'less_whtax' => 'WHTAX'
                 ];
                 $hasDeduction = false;
                 foreach ($deductions as $key => $label) {
@@ -377,27 +395,27 @@ $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
                   echo "<tr><td colspan='2' class='text-center text-gray-500 italic py-2'>No deductions</td></tr>";
                 }
                 ?>
-              </table>
-              <p class="font-semibold mt-2 text-right">
-                Total Deduction:
-                ₱<?= number_format($selectedPayslip['total_deduction'] ?? 0, 2) ?>
-              </p>
+             </table>
+<p class="font-semibold mt-2 text-right mb-4">
+  Total Deduction:
+  ₱<?= number_format($selectedPayslip['total_deduction'] ?? 0, 2) ?>
+</p>
+
             </div>
           </div>
+          <div class="bg-gray-100 rounded-md p-3 text-center mt-6">
+  <p class="font-bold text-lg sm:text-xl">
+    NET PAY:
+    ₱<?= number_format((float)str_replace([',', ' '], '', $selectedPayslip['net_pay'] ?? 0), 2) ?>
+  </p>
+</div>
 
-          <div class="bg-gray-100 rounded-md p-3 text-center">
-            <p class="font-bold text-lg sm:text-xl">
-              NET PAY:
-              ₱<?= number_format((float)str_replace([',', ' '], '', $selectedPayslip['net_pay'] ?? 0), 2) ?>
-            </p>
-          </div>
         </div>
         <?php endif; ?>
-
         <div
           id="loadingOverlay"
           class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50"
-        >
+          >
           <div class="flex flex-col items-center">
             <svg
               class="animate-spin h-10 w-10 text-white mb-3"
@@ -425,8 +443,7 @@ $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
       </main>
     </div>
   </div>
-
-  <!-- ✅ Fixed JS -->
+  <!-- Fixed JS -->
   <script>
     function toggleSidebar() {
       const sidebar = document.getElementById("sidebar");
@@ -443,65 +460,133 @@ $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
       document.getElementById("loadingOverlay").classList.remove("hidden");
       document.getElementById("payslipForm").submit();
     }
-  </script>
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+document.getElementById("downloadPdfBtn")?.addEventListener("click", async () => {
+  const { jsPDF } = window.jspdf;
+  const src = document.querySelector(".bg-white.text-black.rounded-xl.shadow-lg");
+  if (!src) {
+    alert("No payslip available to download.");
+    return;
+  }
 
-  <!-- PDF Export -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script>
-    document.getElementById("downloadPdfBtn")?.addEventListener("click", async () => {
-      const { jsPDF } = window.jspdf;
-      const payslipCard = document.querySelector(".bg-white.text-black.rounded-xl.shadow-lg");
-      if (!payslipCard) {
-        alert("No payslip available to download.");
-        return;
-      }
+  // STEP 1: Ensure all content is visible
+  const originalOverflow = document.body.style.overflow;
+  document.body.style.overflow = "visible";
 
-      const canvas = await html2canvas(payslipCard, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-      });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pageWidth = 210;
-      const imgWidth = pageWidth - 20;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      pdf.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+  // Temporarily detach flex constraints (for full height rendering)
+  const originalDisplay = src.style.display;
+  src.style.display = "block";
 
-      const footerStartY = Math.min(imgHeight + 10, 260);
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(9.5);
-      pdf.text("Disclaimer:", 10, footerStartY);
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(8.5);
-      const lines = [
-        "This payslip can be used for any valid purposes you may require, including but not limited to employment verification, loan applications, visa or",
-        "travel documentation, and proof of income for financial institutions. Should you need further assistance or additional documentation",
-        "feel free to reach out.",
-      ];
-      let y = footerStartY + 5;
-      lines.forEach((line) => {
-        pdf.text(line, 10, y);
-        y += 4;
-      });
-      pdf.setFontSize(9);
-      pdf.text(
-        "Managed by QUIRAO GROUP OF COMPANIES, OPC",
-        pageWidth / 2,
-        y + 8,
-        { align: "center" }
-      );
-      pdf.text("© 2025 All rights reserved.", pageWidth / 2, y + 13, {
-        align: "center",
-      });
+  // Small delay for layout stabilization
+  await new Promise(r => setTimeout(r, 150));
 
-      pdf.save(
-        `PAYSLIP_${(
-          <?= $_SESSION['complete_name'] ? json_encode($_SESSION['complete_name']) : "'Employee'" ?>
-        ).replace(/\s+/g, "_")}.pdf`
-      );
+  // STEP 2: Capture with html2canvas
+  const SCALE = 3; // higher scale = sharper image
+  let canvas;
+  try {
+    canvas = await html2canvas(src, {
+      scale: SCALE,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      scrollY: 0,
+      windowWidth: document.documentElement.scrollWidth,
+      windowHeight: document.body.scrollHeight,
+      logging: false
     });
-  </script>
+  } catch (err) {
+    console.error("Canvas generation failed:", err);
+    alert("Error generating PDF. Please try again.");
+    document.body.style.overflow = originalOverflow;
+    src.style.display = originalDisplay;
+    return;
+  }
+
+  // STEP 3: Restore DOM state
+  document.body.style.overflow = originalOverflow;
+  src.style.display = originalDisplay;
+
+  // STEP 4: Prepare PDF setup
+  const pdf = new jsPDF("p", "mm", "a4");
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+
+  // Adjusted margins (tight header)
+  const marginLeft = 10;
+  const marginTop = 1.5; // only 1.5 mm from top edge (tight logo)
+  const imgWidth = pageWidth - marginLeft * 2;
+  const pageHeightUsable = pageHeight - marginLeft * 2;
+
+  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+  const pageCanvasHeight = (pageHeightUsable * canvas.width) / imgWidth;
+
+  let yOffset = 0;
+  let pageIndex = 0;
+
+  // STEP 5: Slice the canvas into pages if needed
+  while (yOffset < canvas.height) {
+    const pageCanvas = document.createElement("canvas");
+    pageCanvas.width = canvas.width;
+    pageCanvas.height = Math.min(pageCanvasHeight, canvas.height - yOffset);
+
+    const ctx = pageCanvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+    ctx.drawImage(
+      canvas,
+      0, yOffset, canvas.width, pageCanvas.height,
+      0, 0, canvas.width, pageCanvas.height
+    );
+
+    const imgData = pageCanvas.toDataURL("image/png");
+
+    if (pageIndex > 0) pdf.addPage();
+    pdf.addImage(
+      imgData,
+      "PNG",
+      marginLeft,   // left margin
+      marginTop,    // reduced top margin
+      imgWidth,
+      (pageCanvas.height * imgWidth) / canvas.width
+    );
+
+    yOffset += pageCanvasHeight;
+    pageIndex++;
+  }
+
+  //  STEP 6: Footer (unchanged)
+  pdf.setTextColor(120, 120, 120); 
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(9.5);
+  const footerTop = pageHeight - 40;
+  pdf.text("Disclaimer:", 10, footerTop);
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8.5);
+  const lines = [
+    "This payslip can be used for any valid purposes you may require, including but not limited to employment verification, loan applications, visa or",
+    "travel documentation, and proof of income for financial institutions. Should you need further assistance or additional documentation,",
+    "feel free to reach out."
+  ];
+  let y = footerTop + 5;
+  lines.forEach(line => {
+    pdf.text(line, 10, y);
+    y += 4;
+  });
+  pdf.setFontSize(9);
+  pdf.text("Managed by QUIRAO GROUP OF COMPANIES, OPC", pageWidth / 2, pageHeight - 15, { align: "center" });
+  pdf.text("© 2025 All rights reserved.", pageWidth / 2, pageHeight - 10, { align: "center" });
+
+  // STEP 7: Save the file
+  const employeeName = <?= json_encode($_SESSION['complete_name'] ?? 'Employee') ?>;
+  try {
+    pdf.save(`PAYSLIP_${employeeName.replace(/\s+/g, "_")}.pdf`);
+  } catch (err) {
+    alert("Unable to save PDF. Please make sure your browser allows downloads.");
+    console.error(err);
+  }
+});
+</script>
 </body>
 </html>
