@@ -2,8 +2,8 @@
 session_start();
 require __DIR__ . '/vendor/autoload.php';
 
-//$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 // Supabase config
 $projectUrl = $_ENV['SUPABASE_URL'];
@@ -246,7 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   <div class="container">
     <div class="logo">
-      <img src="qgc.png" alt="Logo" width="80">
+      <img src="QGC.png" alt="Logo" width="80">
     </div>
 
     <h2>Set New Password</h2>

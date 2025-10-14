@@ -7,8 +7,8 @@ if (!isset($_SESSION['employee_id'])) {
     exit;
 }
 
-//$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -47,7 +47,7 @@ $subsidiaryDisplayName = $subsidiaryFullNames[$subsidiary] ?? strtoupper($subsid
 $logoPath = $subsidiaryStyles[$subsidiary]['logo'] ?? 'qgc.png';
 $themeColor = $subsidiaryStyles[$subsidiary]['color'] ?? '#949494ff';
 
-// 🔹 Fetch payslip data from Supabase
+// Fetch payslip data from Supabase
 $url = $projectUrl . '/rest/v1/payslip_content?employee_id=eq.' . urlencode($employee_id) . '&order=cutoff_date.desc';
 $ch = curl_init($url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -61,7 +61,7 @@ curl_close($ch);
 
 $payslips = json_decode($response, true) ?? [];
 
-// 🔹 Determine which payslip to show
+// Determine which payslip to show
 $selectedPayslip = null;
 if (!empty($payslips)) {
     if (isset($_POST['payroll_date'])) {
@@ -77,6 +77,7 @@ if (!empty($payslips)) {
 }
 
 $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
+$current_page = basename($_SERVER['PHP_SELF']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -90,9 +91,8 @@ $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
   <meta name="theme-color" content="<?= htmlspecialchars($themeColor) ?>" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
-
   <style>
-    /* ✅ Responsive layout adjustments */
+    /* Responsive layout adjustments */
     @media (max-width: 768px) {
       #sidebar {
         position: fixed;
@@ -157,32 +157,27 @@ $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
     }
   </style>
 </head>
-
 <body class="bg-gradient-to-br from-gray-200 via-gray-300 to-gray-400 text-white font-sans">
   <div class="flex flex-col md:flex-row h-screen overflow-hidden">
     <!-- Sidebar -->
     <div
       id="sidebar"
-      class="w-64 bg-black text-white flex flex-col transition-all duration-300 ease-in-out relative z-50"
-    >
+      class="w-64 bg-black text-white flex flex-col transition-all duration-300 ease-in-out relative z-50">
       <div
-        class="p-6 border-b border-gray-700 flex items-center justify-between relative"
-      >
-        <h1 id="sidebarTitle" class="text-xl font-bold">Payslip Portal</h1>
+        class="p-6 border-b border-gray-700 flex items-center justify-between relative">
+        <h1 id="sidebarTitle" class="text-xl font-bold">Payslip & Loan Portal</h1>
 
         <!-- Collapse / Toggle button -->
         <button
           onclick="toggleSidebar()"
           class="p-2 hover:bg-gray-800 rounded-lg transition-colors absolute right-3 top-5 md:static md:ml-auto"
-          title="Collapse sidebar"
-        >
+          title="Collapse sidebar">
           <svg
             id="toggleIcon"
             class="w-5 h-5 text-white"
             fill="none"
             stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
+            viewBox="0 0 24 24">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -192,23 +187,28 @@ $position = $selectedPayslip['position'] ?? ($_SESSION['position'] ?? '-');
           </svg>
         </button>
       </div>
-      <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
-        <a
-          href="employeedashboard.php"
-          class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3"
-        >
-          <i class="bi bi-speedometer2"></i>
-          <span class="nav-text">Dashboard</span>
-        </a>
-        <a
-          href="index.php"
-          class="w-full block text-left px-4 py-3 rounded-lg bg-white text-black flex items-center space-x-3"
-        >
-          <i class="bi bi-cash-coin"></i>
-          <span class="nav-text">View Payslips</span>
-        </a>
-      </nav>
+      <nav class="flex-1 p-4 space-y-2">
+  <a href="employeedashboard.php"
+     class="w-full block px-4 py-3 rounded-lg flex items-center space-x-3
+     <?= $current_page === 'employeedashboard.php' ? 'bg-white text-black' : 'text-gray-300 hover:bg-gray-800' ?>">
+    <i class="bi bi-speedometer2"></i>
+    <span class="nav-text">Dashboard</span>
+  </a>
 
+  <a href="index.php"
+     class="w-full block px-4 py-3 rounded-lg flex items-center space-x-3
+     <?= $current_page === 'index.php' ? 'bg-white text-black' : 'text-gray-300 hover:bg-gray-800' ?>">
+    <i class="bi bi-cash-coin"></i>
+    <span class="nav-text">View Payslips</span>
+  </a>
+
+  <a href="loan_employee.php"
+     class="w-full block px-4 py-3 rounded-lg flex items-center space-x-3
+     <?= $current_page === 'loan_employee.php' ? 'bg-white text-black' : 'text-gray-300 hover:bg-gray-800' ?>">
+    <i class="bi bi-cash-stack"></i>
+    <span class="nav-text">My Loans</span>
+  </a>
+</nav>
       <div class="p-4 border-t border-gray-700">
         <a
           href="logout.php"
@@ -472,7 +472,7 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
     return;
   }
 
-  // STEP 1: Ensure all content is visible
+  // Ensure all content is visible
   const originalOverflow = document.body.style.overflow;
   document.body.style.overflow = "visible";
 
@@ -483,7 +483,7 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
   // Small delay for layout stabilization
   await new Promise(r => setTimeout(r, 150));
 
-  // STEP 2: Capture with html2canvas
+  // Capture with html2canvas
   const SCALE = 3; // higher scale = sharper image
   let canvas;
   try {
@@ -504,11 +504,11 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
     return;
   }
 
-  // STEP 3: Restore DOM state
+  // Restore DOM state
   document.body.style.overflow = originalOverflow;
   src.style.display = originalDisplay;
 
-  // STEP 4: Prepare PDF setup
+  // Prepare PDF setup
   const pdf = new jsPDF("p", "mm", "a4");
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
@@ -525,7 +525,7 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
   let yOffset = 0;
   let pageIndex = 0;
 
-  // STEP 5: Slice the canvas into pages if needed
+  // Slice the canvas into pages if needed
   while (yOffset < canvas.height) {
     const pageCanvas = document.createElement("canvas");
     pageCanvas.width = canvas.width;
@@ -556,7 +556,7 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
     pageIndex++;
   }
 
-  //  STEP 6: Footer (unchanged)
+  // Footer (unchanged)
   pdf.setTextColor(120, 120, 120); 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(9.5);
@@ -578,7 +578,7 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
   pdf.text("Managed by QUIRAO GROUP OF COMPANIES, OPC", pageWidth / 2, pageHeight - 15, { align: "center" });
   pdf.text("© 2025 All rights reserved.", pageWidth / 2, pageHeight - 10, { align: "center" });
 
-  // STEP 7: Save the file
+  // Save the file
   const employeeName = <?= json_encode($_SESSION['complete_name'] ?? 'Employee') ?>;
   try {
     pdf.save(`PAYSLIP_${employeeName.replace(/\s+/g, "_")}.pdf`);

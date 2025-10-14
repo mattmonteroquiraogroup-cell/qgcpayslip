@@ -7,8 +7,8 @@ use Brevo\Client\Api\TransactionalEmailsApi;
 use Brevo\Client\Model\SendSmtpEmail;
 use GuzzleHttp\Client;
 
-//$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $user_id  = $_POST['employee_id'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    // STEP 1️⃣ — User ID entered
+    // User ID entered
     if ($user_id && !$password) {
         // Check Admin table first
         $url = $projectUrl . "/rest/v1/admin_credentials?admin_id=eq." . urlencode($user_id);
@@ -66,14 +66,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (empty($user['password'])) {
                     $token   = bin2hex(random_bytes(16));
 
-                    // ✅ Always use UTC for expiration time (Supabase standard)
+                    // Always use UTC for expiration time (Supabase standard)
                     date_default_timezone_set('UTC');
                     $expires = gmdate("Y-m-d\TH:i:s\Z", strtotime("+3 hours"));
 
-                    // ✅ Display local time (Philippines)
+                    // Display local time (Philippines)
                     $expiresDisplay = new DateTime($expires, new DateTimeZone('UTC'));
                     $expiresDisplay->setTimezone(new DateTimeZone('Asia/Manila'));
-                    $expiresDisplayFormatted = $expiresDisplay->format('F j, Y');
+                    $expiresDisplayFormatted = $expiresDisplay->format('F j, Y g:i A');
 
                     // Store token in Supabase
                     $url = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user_id);
@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <p>Please click the link below to set your password:</p>
                                 <p><a href='$resetLink'>$resetLink</a></p>
                                 <p>This link expires on <b>$expiresDisplayFormatted</b>.</p>
-                                <p>Thank you.</p>"
+                                <p>Thank you,<br>Payslip Portal Team</p>"
                         ]);
 
                         $apiInstance->sendTransacEmail($sendSmtpEmail);
@@ -136,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-    // STEP 2️⃣ — Password entered
+    // Password entered
     } elseif ($password && isset($_SESSION['temp_user'])) {
         $user_id = $_SESSION['temp_user'];
         $role = $_SESSION['login_role'];
@@ -195,13 +195,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QGC Payslip Portal</title>
+  <title>QGC Payslip & Loan Portal</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <style>
     :root {
@@ -323,7 +322,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       font-weight: 500;
     }
 
-    /* ✅ Responsive adjustments */
+    /* Responsive adjustments */
     @media (max-width: 768px) {
       body {
         padding: 1.5rem;
@@ -366,12 +365,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         width: 120px;
       }
     }
+    
   </style>
 </head>
 <body>
   <div class="login-card">
     <img src="favicon.svg" alt="QGC Logo">
-    <h1>Payslip Portal</h1>
+    <h1>Payslip & Loan Portal</h1>
     <p>Sign in to access your account</p>
 
     <?php if ($message): ?>
@@ -401,8 +401,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     </form>
   </div>
+  <script>
+  document.addEventListener("DOMContentLoaded", function() {
+    const userIdInput = document.getElementById("user_id");
+    userIdInput.addEventListener("input", function() {
+      this.value = this.value.toUpperCase();
+    });
+  });
+</script>
+
 </body>
 </html>
-
-
-

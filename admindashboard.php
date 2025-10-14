@@ -3,7 +3,7 @@ session_start();
 require __DIR__ . '/vendor/autoload.php';
 use Dotenv\Dotenv;
 
-// 🚨 Protect this page
+// Protect this page
 if (!isset($_SESSION['role'])) {
     header("Location: login.php");
     exit();
@@ -14,12 +14,44 @@ if ($_SESSION['role'] !== 'admin') {
 }
 
 // Load environment variables
-//$dotenv = Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
 $table      = "payslip_content";
+
+// Activity Logs function (added)
+function logActivity($action, $description) {
+    global $projectUrl, $apiKey;
+
+    $admin_id = $_SESSION['employee_id'] ?? 'ADMIN';
+    $admin_name = $_SESSION['complete_name'] ?? 'Administrator';
+
+    $logData = [[
+        'admin_id' => $admin_id,
+        'admin_name' => $admin_name,
+        'action' => $action,
+        'description' => $description
+    ]];
+
+    $payload = json_encode($logData);
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, "$projectUrl/rest/v1/activity_logs");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "apikey: $apiKey",
+        "Authorization: Bearer $apiKey",
+        "Content-Type: application/json",
+        "Prefer: return=minimal"
+    ]);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
 
 $valid_columns = [
     "payroll_date","cutoff_date","employee_id","name","position","subsidiary","salary_type",
@@ -40,7 +72,7 @@ function clean_utf8($value) {
 
 $uploadSuccess = false;
 
-// ✅ Fixed: Add Employee (no password) to employee_credentials
+// Fixed: Add Employee (no password) to employee_credentials
 if (isset($_POST['action']) && $_POST['action'] === 'add_employee') {
     $employeeData = [
         "employee_id" => $_POST['employee_id'] ?? null,
@@ -69,15 +101,18 @@ if (isset($_POST['action']) && $_POST['action'] === 'add_employee') {
     curl_close($ch);
 
     if ($httpCode == 201) {
+        // Log this action before redirect
+        logActivity("Add Employee", "Added new employee: {$employeeData['employee_id']} - {$employeeData['complete_name']}");
+
         header("Location: admindashboard.php?added=success");
         exit();
     } else {
         echo "<script>alert('Employee Already Exists');</script>";
     }
 }
-// ✅ NEW CODE END
 
-// 📤 Existing CSV upload handler (untouched)
+
+// Existing CSV upload handler (untouched)
 if (isset($_POST['submit'])) {
     if (is_uploaded_file($_FILES['csv_file']['tmp_name'])) {
         $csv_file = fopen($_FILES['csv_file']['tmp_name'], 'r');
@@ -154,11 +189,17 @@ if (isset($_POST['submit'])) {
             if ($httpcode == 201) {
                 $uploadSuccess = true;
             }
+
+            if ($httpcode == 201) {
+    $uploadSuccess = true;
+    logActivity("Upload Payslip", "Uploaded payslip CSV with " . count($rows) . " records.");
+}
+
         }
     }
 }
 
-// 📥 Existing fetch employees logic
+// Existing fetch employees logic
 $ch = curl_init();
 curl_setopt($ch, CURLOPT_URL, "$projectUrl/rest/v1/$table?select=employee_id,name,position,net_pay,payroll_date");
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
@@ -169,13 +210,24 @@ curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 $response = curl_exec($ch);
 curl_close($ch);
 $employees = json_decode($response, true);
+$current_page = basename($_SERVER['PHP_SELF']);
+
+function navButtonClass($page, $current_page) {
+    if ($page === $current_page) {
+        // Active button: highlighted background
+        return "bg-gray-800 text-white font-semibold";
+    } else {
+        // Inactive button: plain, no hover
+        return "bg-transparent text-white";
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin Dashboard</title>
+  <title>Payslip Management</title>
    <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
@@ -183,29 +235,38 @@ $employees = json_decode($response, true);
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css" />
   <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
 </head>
-
 <body class="bg-gray-100 font-sans">
 <div class="flex h-screen">
-
   <!-- Sidebar -->
   <div id="sidebar" class="w-64 bg-black text-white flex flex-col transition-all duration-300 ease-in-out">
       <div class="p-6 border-b border-gray-700 flex items-center justify-between">
-          <h1 id="sidebarTitle" class="text-xl font-bold">Payslip Portal</h1>
+          <h1 id="sidebarTitle" class="text-xl font-bold">Payslip & Loan Portal</h1>
          <button onclick="toggleSidebar()" class="p-2 hover:bg-gray-800 rounded-lg transition-colors">
   <svg id="toggleIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
   </svg>
 </button>
-
       </div>
+<nav class="flex-1 p-4 space-y-2">
+  <!-- Payslip Management -->
+  <button onclick="window.location.href='admindashboard.php'"
+    class="w-full text-left px-4 py-3 rounded-lg flex items-center space-x-3 <?= navButtonClass('admindashboard.php', $current_page) ?>">
+    <i class="bi bi-people"></i>
+    <span class="nav-text">Payslip Management</span>
+  </button>
+  <!-- Track Loans -->
+  <button onclick="window.location.href='admin_loan.php'"
+    class="w-full text-left px-4 py-3 rounded-lg flex items-center space-x-3 <?= navButtonClass('admin_loan.php', $current_page) ?>">
+    <i class="bi bi-cash-stack"></i>
+    <span class="nav-text">Track Loans</span>
+  </button>
+<button onclick="window.location.href='activity_logs.php'"
+  class="w-full text-left px-4 py-3 rounded-lg flex items-center space-x-3 <?= navButtonClass('activity_logads.php', $current_page) ?>">
+  <i class="bi bi-clock-history"></i>
+  <span class="nav-text">Activity Logs</span>
+</button>
 
-      <nav class="flex-1 p-4 space-y-2">
-          <button onclick="showSection('upload')" class="w-full text-left px-4 py-3 rounded-lg bg-white text-black hover:bg-gray-200 flex items-center space-x-3">
-              <i class="bi bi-people"></i>
-              <span class="nav-text">Payslip Management</span>
-          </button>
-      </nav>
-
+</nav>
       <div class="p-4 border-t border-gray-700">
           <a href="logout.php" class="w-full block px-4 py-3 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center space-x-3">
               <i class="bi bi-box-arrow-right"></i>
@@ -439,4 +500,3 @@ $(document).ready(function(){
 </div>
 </body>
 </html>
-

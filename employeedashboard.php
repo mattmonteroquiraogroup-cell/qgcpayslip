@@ -8,15 +8,15 @@ if (!isset($_SESSION['employee_id'])) {
     exit;
 }
 
-//$dotenv = Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
 
 $employee_id = $_SESSION['employee_id'];
 
-// 🔹 Fetch all payslips for this employee
+// Fetch all payslips for this employee
 $url = $projectUrl . '/rest/v1/payslip_content?employee_id=eq.' . urlencode($employee_id) . '&order=cutoff_date.desc,payroll_date.desc';
 $ch = curl_init($url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -38,7 +38,7 @@ if (!empty($payslips)) {
 }
 
 
-// 🔹 Compute totals
+// Compute totals
 $totalNetPay = 0;
 $totalSSS = 0;
 $totalPHIC = 0;
@@ -67,7 +67,7 @@ foreach ($payslips as $p) {
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 
   <style>
-    /* ✅ Responsive adjustments */
+    /* Responsive adjustments */
     @media (max-width: 1023px) {
       #sidebar {
         position: fixed;
@@ -82,7 +82,7 @@ foreach ($payslips as $p) {
       }
     }
 
-    /* ✅ Desktop collapse style */
+    /* Desktop collapse style */
     @media (min-width: 1024px) {
       #sidebar.collapsed {
         width: 4rem !important;
@@ -123,6 +123,11 @@ foreach ($payslips as $p) {
           <a href="index.php" class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
               <i class="bi bi-cash-coin"></i>
               <span class="nav-text">My Payslips</span>
+          </a>
+
+          <a href="loan_employee.php" class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
+              <i class="bi bi-cash-stack"></i>
+              <span class="nav-text">My Loans</span>
           </a>
       </nav>
 
