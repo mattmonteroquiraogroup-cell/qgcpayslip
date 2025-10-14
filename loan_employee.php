@@ -42,8 +42,8 @@ $subsidiaryDisplayName = $subsidiaryFullNames[$subsidiary] ?? strtoupper($subsid
 $logoPath = $subsidiaryStyles[$subsidiary]['logo'] ?? 'qgc.png';
 $themeColor = $subsidiaryStyles[$subsidiary]['color'] ?? '#949494ff';
 
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+//$dotenv = Dotenv::createImmutable(__DIR__);
+//$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -392,4 +392,5 @@ function toggleSidebar() {
 }
 </script>
 </body>
+
 </html>
