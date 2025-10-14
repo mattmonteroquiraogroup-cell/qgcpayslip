@@ -7,8 +7,8 @@ if (!isset($_SESSION['employee_id'])) {
     exit;
 }
 
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+//$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+//$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -590,3 +590,4 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
 </script>
 </body>
 </html>
+
