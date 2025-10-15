@@ -14,8 +14,8 @@ if ($_SESSION['role'] !== 'admin') {
 }
 
 // Load .env for Supabase
-//$dotenv = Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -96,10 +96,16 @@ $updateData = [
 
 // If marking as active, auto-fill date_approved
 if ($status === 'active' && empty($loan['date_approved'])) {
-    $updateData["date_approved"] = date("m-d-Y");
+    $updateData["date_approved"] = date("M-d-y");
 } else if ($status === 'pending') {
     $updateData["date_approved"] = null;
 }
+
+// If the loan is being activated and balance is zero, set it equal to loan amount
+if ($status === 'active' && (empty($loan['balance']) || $loan['balance'] == 0)) {
+    $updateData["balance"] = (float)$loan_amount;
+}
+
 
 
     $payload = json_encode($updateData);
@@ -288,9 +294,7 @@ function navButtonClass($page, $current_page) {
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css" />
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
 
 <style>
 #loanTable td { position: relative; z-index: 1; }
@@ -308,6 +312,15 @@ function navButtonClass($page, $current_page) {
   #loanTable td {
     text-align: center;
   }
+}
+
+.dt-buttons {
+  margin-bottom: 1rem;
+}
+.dt-button {
+  border: none !important;
+  font-weight: 500;
+  transition: background-color 0.2s ease-in-out;
 }
 </style>
 </head>
@@ -343,68 +356,91 @@ function navButtonClass($page, $current_page) {
     </a>
   </div>
 </div>
+
+  <!-- Main -->
+  <div class="flex-1 flex flex-col">
+    <header class="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center">
+      <span class="text-sm text-gray-600">Welcome, <?= htmlspecialchars($_SESSION['complete_name']) ?></span>
+    </header>
+    
 <!-- Main -->
 <main id="mainContent" class="flex-1 p-6 overflow-y-auto transition-all duration-300">
   <div class="max-w-7xl mx-auto bg-white rounded-lg shadow p-6">
     <h2 class="text-2xl font-semibold mb-6">Loan Overview</h2>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      <div class="border p-4 rounded-lg"><p class="text-sm">Total Loan Amount</p><p class="text-2xl font-bold">₱<?= number_format($totalLoanAmount, 2) ?></p></div>
-      <div class="border p-4 rounded-lg"><p class="text-sm">Total Amount Paid</p><p class="text-2xl font-bold">₱<?= number_format($totalAmountPaid, 2) ?></p></div>
-      <div class="border p-4 rounded-lg"><p class="text-sm">Balance</p><p class="text-2xl font-bold">₱<?= number_format($totalLoanAmount - $totalAmountPaid, 2) ?></p></div>
-      <div class="border p-4 rounded-lg"><p class="text-sm">Active Loans</p><p class="text-2xl font-bold"><?= $activeLoans ?></p></div>
+      <div class="border shadow-lg p-4 rounded-lg"><p class="text-sm">Total Loan Amount</p><p class="text-2xl font-bold">₱<?= number_format($totalLoanAmount, 2) ?></p></div>
+      <div class="border shadow-lg p-4 rounded-lg"><p class="text-sm">Total Amount Paid</p><p class="text-2xl font-bold">₱<?= number_format($totalAmountPaid, 2) ?></p></div>
+      <div class="border shadow-lg p-4 rounded-lg"><p class="text-sm">Balance</p><p class="text-2xl font-bold">₱<?= number_format($totalLoanAmount - $totalAmountPaid, 2) ?></p></div>
+      <div class="border shadow-lg p-4 rounded-lg"><p class="text-sm">Active Loans</p><p class="text-2xl font-bold"><?= $activeLoans ?></p></div>
     </div>
 
-    <div class="overflow-x-auto">
-      <table id="loanTable" class="display w-full text-center border">
-        <thead class="bg-black text-white">
-          <tr>
-            <th>Name</th><th>Employee ID</th><th>Subsidiary</th><th>Loan Type</th>
-            <th>Loan Amount</th><th>Payment Terms</th><th>Payment per Cutoff</th><th>Balance</th>
-            <th>Status</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php if (!empty($loans)): foreach ($loans as $loan): ?>
-          <tr>
-            <td><?= htmlspecialchars($loan['name']) ?></td>
-            <td><?= htmlspecialchars($loan['employee_id']) ?></td>
-            <td><?= htmlspecialchars($loan['subsidiary']) ?></td>
-            <td><?= htmlspecialchars($loan['loan_type']) ?></td>
-            <td>₱<?= number_format($loan['loan_amount'], 2) ?></td>
-            <td><?= htmlspecialchars($loan['payment_terms']) ?></td>
-            <td>₱<?= number_format($loan['payment_amount'], 2) ?></td>
-            <td>₱<?= number_format($loan['balance'] ?? 0, 2) ?></td>
-            <td>
-              <span class="px-3 py-1 rounded-full text-white 
-                <?= $loan['status']==='active'?'bg-blue-600':($loan['status']==='paid'?'bg-green-600':'bg-yellow-500') ?>">
-                <?= ucfirst($loan['status']) ?>
-              </span>
-            </td>
-                  <td class="flex justify-center gap-2">
-          <button title="Edit Loan" 
-            class="edit-btn bg-red-500 hover:bg-red-600 text-white p-2 rounded transition-all duration-200"
-            data-loan='<?= json_encode($loan) ?>'>
-            <i class="bi bi-pencil-square"></i>
-          </button>
-          <button title="Add Payment" 
-            class="payment-btn bg-green-600 hover:bg-green-700 text-white p-2 rounded transition-all duration-200"
-            data-loan='<?= json_encode($loan) ?>'>
-            <i class="bi bi-cash-stack"></i>
-          </button>
-          <button title="View History" 
-            class="history-btn bg-gray-700 hover:bg-gray-800 text-white p-2 rounded transition-all duration-200"
-            data-loan-id="<?= $loan['id'] ?>">
-            <i class="bi bi-clock-history"></i>
-          </button>
-        </td>
-          </tr>
-          <?php endforeach; else: ?>
-          <tr><td colspan="10" class="text-gray-500 py-4">No records found.</td></tr>
-          <?php endif; ?>
-        </tbody>
-      </table>
-    </div>
+<div class="overflow-x-auto mt-4">
+  <div class="flex justify-between items-center mb-4">
+    <h3 class="text-lg font-semibold">Loan Records</h3>
+    <button onclick="exportToExcel()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">
+      <i class="bi bi-download me-2"></i> Export Loans
+    </button>
+  </div>
+
+  <table class="min-w-full border border-gray-200 text-sm rounded-lg overflow-hidden shadow-sm">
+    <thead class="bg-black text-white text-center">
+      <tr>
+        <th class="p-3 cursor-pointer" onclick="sortTable(0)">Name</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(1)">Employee ID</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(2)">Subsidiary</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(3)">Loan Type</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(4)">Loan Amount</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(5)">Terms</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(6)">Payment per Cutoff</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(7)">Balance</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(8)">Status</th>
+        <th class="p-3">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="bg-white text-center divide-y divide-gray-200">
+      <?php if (!empty($loans)): foreach ($loans as $loan): ?>
+        <tr class="hover:bg-gray-50 transition-colors">
+          <td class="p-3"><?= htmlspecialchars($loan['name']) ?></td>
+          <td class="p-3"><?= htmlspecialchars($loan['employee_id']) ?></td>
+          <td class="p-3"><?= htmlspecialchars($loan['subsidiary']) ?></td>
+          <td class="p-3"><?= htmlspecialchars($loan['loan_type']) ?></td>
+          <td class="p-3 font-medium text-gray-800">₱<?= number_format($loan['loan_amount'], 2) ?></td>
+          <td class="p-3"><?= htmlspecialchars($loan['payment_terms']) ?></td>
+          <td class="p-3 text-gray-700">₱<?= number_format($loan['payment_amount'], 2) ?></td>
+          <td class="p-3 text-gray-700">₱<?= number_format($loan['balance'] ?? 0, 2) ?></td>
+          <td class="p-3">
+            <span class="px-3 py-1 rounded-full text-white text-xs 
+              <?= $loan['status']==='active'?'bg-blue-600':
+                ($loan['status']==='paid'?'bg-green-600':'bg-yellow-500 text-black') ?>">
+              <?= ucfirst($loan['status']) ?>
+            </span>
+          </td>
+          <td class="p-3 flex justify-center gap-2">
+            <button title="Edit Loan" 
+              class="edit-btn bg-red-500 hover:bg-red-600 text-white p-2 rounded transition"
+              data-loan='<?= json_encode($loan) ?>'>
+              <i class="bi bi-pencil-square"></i>
+            </button>
+            <button title="Add Payment" 
+              class="payment-btn bg-green-600 hover:bg-green-700 text-white p-2 rounded transition"
+              data-loan='<?= json_encode($loan) ?>'>
+              <i class="bi bi-cash-stack"></i>
+            </button>
+            <button title="View History" 
+              class="history-btn bg-gray-700 hover:bg-gray-800 text-white p-2 rounded transition"
+              data-loan-id="<?= $loan['id'] ?>">
+              <i class="bi bi-clock-history"></i>
+            </button>
+          </td>
+        </tr>
+      <?php endforeach; else: ?>
+        <tr><td colspan="10" class="text-gray-500 py-6">No loan records found.</td></tr>
+      <?php endif; ?>
+    </tbody>
+  </table>
+</div>
+
   </div>
 </main>
 </div>
@@ -477,12 +513,8 @@ function navButtonClass($page, $current_page) {
     </div>
   </div>
 </div>
-
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-$(document).ready(function() {
-  $('#loanTable').DataTable({ pageLength: 10, order: [[0,'asc']], language: { search: "_INPUT_", searchPlaceholder: "Search loans..." } });
-});
-
 // Modal handling
 $(document).on('click', '.edit-btn', function() {
   const loan = JSON.parse($(this).attr('data-loan'));
@@ -544,7 +576,44 @@ function toggleSidebar() {
     toggleIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>';
   }
 }
+// Simple table sorting
+function sortTable(colIndex) {
+  const table = document.querySelector("table");
+  const tbody = table.querySelector("tbody");
+  const rows = Array.from(tbody.querySelectorAll("tr"));
+  const isAsc = table.getAttribute("data-sort-dir") !== "asc";
+  
+  rows.sort((a, b) => {
+    const A = a.children[colIndex].innerText.trim().toLowerCase();
+    const B = b.children[colIndex].innerText.trim().toLowerCase();
+    return isAsc ? A.localeCompare(B, 'en', {numeric: true}) : B.localeCompare(A, 'en', {numeric: true});
+  });
+  
+  tbody.innerHTML = "";
+  rows.forEach(r => tbody.appendChild(r));
+  table.setAttribute("data-sort-dir", isAsc ? "asc" : "desc");
+}
+// Export table to XLSX (Excel) — excludes "Actions" column
+function exportToExcel() {
+  const table = document.querySelector("table");
+  const wb = XLSX.utils.book_new();
+
+  // Clone table to avoid altering the DOM
+  const clone = table.cloneNode(true);
+
+  // Remove the last column (Actions) from header and body
+  clone.querySelectorAll("tr").forEach(row => {
+    if (row.lastElementChild) {
+      row.removeChild(row.lastElementChild);
+    }
+  });
+
+  // Convert cleaned table to Excel sheet
+  const ws = XLSX.utils.table_to_sheet(clone);
+
+  XLSX.utils.book_append_sheet(wb, ws, "Loans");
+  XLSX.writeFile(wb, "Loan_Records.xlsx");
+}
 </script>
 </body>
 </html>
-

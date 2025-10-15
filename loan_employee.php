@@ -9,6 +9,11 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'employee') {
     exit();
 }
 
+// Prevent cached pages after logout
+header("Cache-Control: no-cache, no-store, must-revalidate"); 
+header("Pragma: no-cache"); 
+header("Expires: 0"); 
+
 $subsidiary  = strtoupper($_SESSION['subsidiary'] ?? 'QGC');
 
 // Map each subsidiary to its logo and color
@@ -42,8 +47,8 @@ $subsidiaryDisplayName = $subsidiaryFullNames[$subsidiary] ?? strtoupper($subsid
 $logoPath = $subsidiaryStyles[$subsidiary]['logo'] ?? 'qgc.png';
 $themeColor = $subsidiaryStyles[$subsidiary]['color'] ?? '#949494ff';
 
-//$dotenv = Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -91,15 +96,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['loan_amount'])) {
 
     $result = json_decode($response, true);
 
-    if ($httpCode >= 200 && $httpCode < 300) {
-        echo "<script>alert('Loan request submitted successfully!'); window.location.href='loan_employee.php';</script>";
-        exit;
-    } else {
-        $errorMsg = isset($result['message']) ? $result['message'] : 'Unknown error';
-        echo "<script>alert('Failed to submit loan: " . addslashes($errorMsg) . "');</script>";
-    }
+$showSuccessModal = false;
+if ($httpCode >= 200 && $httpCode < 300) {
+    $showSuccessModal = true;
+} else {
+    $errorMsg = isset($result['message']) ? $result['message'] : 'Unknown error';
+    echo "<script>alert('Failed to submit loan: " . addslashes($errorMsg) . "');</script>";
 }
 
+}
 
 //  FETCH EMPLOYEE'S LOANS WITH BALANCES
 $ch = curl_init("$projectUrl/rest/v1/loans?select=*&employee_id=eq.$employee_id&order=inserted_at.desc");
@@ -138,7 +143,12 @@ foreach ($loans as &$loan) {
     $totalPaid = array_sum(array_column($payments, 'payment_amount'));
 
     $loan['total_paid'] = $totalPaid;
+    if (($loan['status'] ?? 'pending') === 'pending') {
+    $loan['balance'] = 0; // Pending loans should show 0 balance
+} else {
     $loan['balance'] = max(0, ((float)$loan['loan_amount']) - $totalPaid);
+}
+
 }
 unset($loan);
 ?>
@@ -155,94 +165,142 @@ unset($loan);
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
 <style>
-/* Unified Sidebar Styles for Mobile and Desktop Collapse */
-@media (max-width: 1023px) {
-    #sidebar {
-        position: fixed;
-        top: 0;
-        left: -16rem;
-        height: 100%;
-        z-index: 50;
-        transition: left 0.3s ease-in-out;
-    }
-    #sidebar.active {
-        left: 0;
-    }
+/* Full background gradient for consistency with dashboard */
+body {
+  min-height: 100vh;
+  background: linear-gradient(to bottom right, #e5e7eb, #d1d5db, #9ca3af);
+  background-attachment: fixed;
+  color: #111;
+  font-family: sans-serif;
 }
 
-/* Desktop collapse style (width: 4rem) - Ensures square active state */
+/* Sidebar base styling */
+#sidebar {
+  background-color: rgba(0, 0, 0, 1);
+  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.4);
+}
+
+/* Mobile Sidebar Behavior */
+@media (max-width: 1023px) {
+  #sidebar {
+    position: fixed;
+    top: 0;
+    left: -18rem;
+    height: 100%;
+    z-index: 50;
+    transition: left 0.3s ease-in-out;
+  }
+  #sidebar.active {
+    left: 0;
+  }
+}
+
+/* Desktop Sidebar Collapse Behavior */
 @media (min-width: 1024px) {
-    #sidebar.collapsed {
-        width: 4rem !important; 
-        transition: width 0.3s ease-in-out;
-    }
+  #sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 18rem;
+    transition: width 0.3s ease-in-out;
+  }
 
-    #sidebar.collapsed .nav-text,
-    #sidebar.collapsed #sidebarTitle {
-        display: none !important;
-    }
+  #sidebar.collapsed {
+    width: 4rem !important; 
+    transition: width 0.3s ease-in-out;
+  }
 
-    /* FIX: Set uniform padding (0.85rem) for the square look and center the links */
-    /* Padding is applied to the link container, now the margin from the nav container handles the outer spacing */
-    #sidebar.collapsed nav a {
-        /* This ensures the active square is perfectly centered */
-        padding: 0.85rem !important; 
-        width: 100% !important; 
-        justify-content: center !important;
-    }
-    
-    /* Ensure the icon itself is centered */
-    #sidebar.collapsed nav a i {
-        margin: 0 auto; 
-    }
+  /* Hide texts when collapsed */
+  #sidebar.collapsed .nav-text,
+  #sidebar.collapsed #sidebarTitle {
+    display: none !important;
+  }
+
+  /* Center links and ensure square buttons */
+  #sidebar.collapsed nav a {
+    padding: 0.85rem !important;
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* Center icon */
+  #sidebar.collapsed nav a i {
+    margin: 0 auto;
+  }
+
+  /* Shift main content area when sidebar expanded */
+  #main-content {
+    margin-left: 18rem;
+    transition: margin-left 0.3s ease-in-out;
+  }
+
+  /* When sidebar collapsed, shift content closer */
+  #sidebar.collapsed ~ #main-content {
+    margin-left: 4rem;
+  }
 }
 </style>
 </head>
-
 <body class="bg-gradient-to-br from-gray-200 via-gray-300 to-gray-400 text-gray-900 font-sans">
 <div class="flex flex-col md:flex-row h-screen overflow-hidden">
-
-  <div id="sidebar" class="w-64 bg-black text-white flex flex-col transition-all duration-300 ease-in-out relative z-50">
-      
-      <div class="p-6 border-b border-gray-700 flex items-center justify-between relative">
-          <h1 id="sidebarTitle" class="text-xl font-bold">Payslip & Loan Portal</h1>
-          <button onclick="toggleSidebar()" class="p-2 hover:bg-gray-800 rounded-lg transition-colors absolute right-3 top-5 md:static md:ml-auto">
-              <svg id="toggleIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
-              </svg>
-          </button>
-      </div>
-
-      <nav class="flex-1 space-y-2 mx-2">
-          <a href="employeedashboard.php" class="w-full block text-left py-3 px-5 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
-              <i class="bi bi-speedometer2"></i>
-              <span class="nav-text">Dashboard</span>
-          </a>
-          <a href="index.php" class="w-full block text-left py-3 px-5 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
-              <i class="bi bi-cash-coin"></i>
-              <span class="nav-text">View Payslips</span>
-          </a>
-          <a href="loan_employee.php" class="w-full block text-left py-3 px-5 rounded-lg bg-white text-black flex items-center space-x-3">
-              <i class="bi bi-cash-stack"></i>
-              <span class="nav-text">My Loans</span>
-          </a>
-      </nav>
-
-      <div class="p-4 border-t border-gray-700 mx-2">
-          <a href="logout.php" class="w-full block py-3 px-5 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center space-x-3">
-              <i class="bi bi-box-arrow-right"></i>
-              <span class="nav-text">Log Out</span>
-          </a>
-      </div>
+<!-- Sidebar -->
+<div id="sidebar" class="bg-black text-white flex flex-col transition-all duration-300 ease-in-out z-50">
+  <div class="p-6 border-b border-gray-700 flex items-center justify-between">
+    <h1 id="sidebarTitle" class="text-xl font-bold whitespace-nowrap overflow-hidden md:whitespace-normal md:overflow-visible">
+      Payslip & Loan Portal
+    </h1>
+    <button onclick="toggleSidebar()" class="p-2 hover:bg-gray-800 rounded-lg transition-colors ml-2 flex-shrink-0">
+      <svg id="toggleIcon" class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
+      </svg>
+    </button>
   </div>
+
+  <nav class="flex-1 p-4 space-y-2">
+    <a href="employeedashboard.php" class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
+      <i class="bi bi-speedometer2"></i>
+      <span class="nav-text">Dashboard</span>
+    </a>
+    <a href="index.php" class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
+      <i class="bi bi-cash-coin"></i>
+      <span class="nav-text">My Payslips</span>
+    </a>
+    <a href="loan_employee.php" class="w-full block text-left px-4 py-3 rounded-lg bg-white text-black flex items-center space-x-3">
+      <i class="bi bi-cash-stack"></i>
+      <span class="nav-text">Loans</span>
+    </a>
+  </nav>
+</div>
+  <!-- Main Content -->
   <div class="flex-1 flex flex-col overflow-y-auto">
-    <header class="bg-black shadow-sm border-b border-gray-800 px-4 md:px-6 py-4 flex justify-between items-center text-white">
-      <h2 class="text-xl font-semibold text-white">Welcome, <?= htmlspecialchars($name) ?></h2>
-      <button onclick="toggleSidebar()" class="md:hidden p-2 rounded-lg hover:bg-gray-800 transition-colors">
-        <i class="bi bi-list text-xl"></i>
-      </button>
+<header class="bg-black shadow-sm border-b border-gray-800 px-4 md:px-6 py-4 flex items-center justify-between text-white">
+  <!-- Burger (mobile only) -->
+  <button onclick="toggleSidebar()" class="md:hidden p-2 rounded-lg hover:bg-gray-800 transition-colors text-white">
+    <i class="bi bi-list text-xl"></i>
+  </button>
+
+ <!-- Right side (account dropdown) -->
+<div class="dropdown ms-auto">
+  <button
+    class="dropdown-toggle d-flex align-items-center border-0 bg-transparent text-white fw-semibold"
+    type="button"
+    id="accountDropdown"
+    data-bs-toggle="dropdown"
+    aria-expanded="false"
+    style="box-shadow: none;">
+    <i class="bi bi-person-circle me-2"></i>
+    <span class="text-sm font-small">
+      <?= htmlspecialchars($_SESSION['complete_name'] ?? 'Account') ?>
+    </span>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end mt-2 shadow" aria-labelledby="accountDropdown">
+    <li><a class="dropdown-item text-danger" href="logout.php"> <i class="bi bi-box-arrow-right me-2"></i>Logout</a>
+    </li>
+  </ul>
+</div>
     </header>
     <main class="flex-1 py-8 px-6">
       <div class="bg-white rounded-2xl shadow-lg p-6 max-w-6xl mx-auto">
@@ -351,8 +409,39 @@ unset($loan);
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Success Modal -->
+<div class="modal fade" id="successModal" tabindex="-1" aria-labelledby="successModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-black text-white">
+        <h5 class="modal-title" id="successModalLabel">
+          <i class="bi bi-check-circle-fill me-2 text-white"></i> Loan Request Submitted
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center py-4">
+        <p class="fs-5 mb-0">Your loan request has been successfully submitted!<br>
+        Please wait for HR approval.</p>
+      </div>
+      <div class="modal-footer justify-content-center">
+        <button type="button" class="btn btn-dark px-4" data-bs-dismiss="modal"
+          onclick="window.location.href='loan_employee.php'">
+          OK
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<?php if (!empty($showSuccessModal) && $showSuccessModal === true): ?>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var successModal = new bootstrap.Modal(document.getElementById('successModal'));
+  successModal.show();
+});
+</script>
+<?php endif; ?>
 <script>
 // Auto-calculate loan payment - logic maintained for modal functionality
 const loanAmount = document.getElementById('loanAmount');
@@ -367,31 +456,60 @@ function calculatePayment() {
 }
 loanAmount.addEventListener('input', calculatePayment);
 paymentTerms.addEventListener('input', calculatePayment);
+</script>
+<script>
+function updateDateTime() {
+  const now = new Date();
+  const formatted = now.toLocaleString("en-US", { 
+    year: "numeric", month: "2-digit", day: "2-digit", 
+    hour: "2-digit", minute: "2-digit", second: "2-digit", 
+    hour12: true 
+  });
+  document.getElementById("datetime").textContent = formatted;
+}
+setInterval(updateDateTime, 1000);
+updateDateTime();
 
-// Unified Sidebar Toggle Logic 
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
   const isMobile = window.innerWidth < 1024;
 
   if (isMobile) {
-    // Mobile: slide in/out
     sidebar.classList.toggle('active');
   } else {
-    // Desktop: collapse/expand
     sidebar.classList.toggle('collapsed');
-
     const toggleIcon = document.getElementById('toggleIcon');
-    if (sidebar.classList.contains('collapsed')) {
-      // Toggle to a "show" icon (pointing right)
-      toggleIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>';
-    } else {
-      // Toggle to a "hide" icon (pointing left)
-      toggleIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>';
-    }
+    toggleIcon.innerHTML = sidebar.classList.contains('collapsed')
+      ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>'
+      : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>';
   }
 }
+
+// Account dropdown toggle
+document.addEventListener("DOMContentLoaded", () => {
+  const toggle = document.getElementById("accountToggle");
+  const menu = document.getElementById("accountMenu");
+
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation(); // prevents immediate close
+    menu.classList.toggle("hidden");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!toggle.contains(e.target) && !menu.contains(e.target)) {
+      menu.classList.add("hidden");
+    }
+  });
+});
 </script>
+<script>
+window.addEventListener("pageshow", function (event) {
+  if (event.persisted) {
+    // Force reload if coming from browser cache (like pressing Back)
+    window.location.reload();
+  }
+});
+</script>
+
 </body>
-
 </html>
-

@@ -8,11 +8,53 @@ if (!isset($_SESSION['employee_id'])) {
     exit;
 }
 
-//$dotenv = Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+// Prevent cached pages after logout
+header("Cache-Control: no-cache, no-store, must-revalidate"); 
+header("Pragma: no-cache"); 
+header("Expires: 0"); 
+
+
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
+
+$employee_id = $_SESSION['employee_id'];
+$subsidiary  = strtoupper($_SESSION['subsidiary'] ?? 'QGC');
+
+// Map each subsidiary to its logo and color
+$subsidiaryStyles = [
+    'QGC'              => ['logo' => 'QGC.png', 'color' => '#aaaaaaff'],
+    'WATERGATE'        => ['logo' => 'WTG.png', 'color' => '#0284c7'],
+    'SARI-SARI MANOKAN'=> ['logo' => 'PFC.png', 'color' => '#00973fff'],
+    'PALUTO'           => ['logo' => 'PFC.png', 'color' => '#cc1800ff'],
+    'COMMISSARY'       => ['logo' => 'PFC.png', 'color' => '#cc1800ff'],
+    'BRIGHTLINE'       => ['logo' => 'BL.png', 'color' => '#df6808ff'],
+    'BMMI-WAREHOUSE'   => ['logo' => 'BMMI.png', 'color' => '#df6808ff'],
+    'BMMI-DROPSHIPPING'=> ['logo' => 'BMMI.png', 'color' => '#df6808ff'],
+];
+
+// Map subsidiary codes to full names
+$subsidiaryFullNames = [
+    'QGC'               => 'QUIRAO GROUP OF COMPANIES',
+    'BMMI-WAREHOUSE'    => 'BUILDMASTER',
+    'BMMI-DROPSHIPPING' => 'BUILDMASTER',
+    'BRIGHTLINE'        => 'BRIGHTLINE TRUCKING CORPORATION',
+    'WATERGATE'         => 'WATERGATE',
+    'SARI-SARI MANOKAN' => 'PIGGLY FOODS CORPORATION',
+    'PALUTO'            => 'PIGGLY FOODS CORPORATION',
+    'COMMISSARY'        => 'PIGGLY FOODS CORPORATION',
+
+];
+
+// Define display name safely
+$subsidiaryDisplayName = $subsidiaryFullNames[$subsidiary] ?? strtoupper($subsidiary);
+
+// fallback if not found
+$logoPath = $subsidiaryStyles[$subsidiary]['logo'] ?? 'qgc.png';
+$themeColor = $subsidiaryStyles[$subsidiary]['color'] ?? '#949494ff';
+
 
 $employee_id = $_SESSION['employee_id'];
 
@@ -37,7 +79,6 @@ if (!empty($payslips)) {
     $position = $latest['position'] ?? '-';
 }
 
-
 // Compute totals
 $totalNetPay = 0;
 $totalSSS = 0;
@@ -59,20 +100,37 @@ foreach ($payslips as $p) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Employee Compensation Dashboard</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <title>Compensation Dashboard</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="<?= htmlspecialchars($logoPath) ?>?v=1" />
+  <link rel="icon" type="image/png" sizes="64x64" href="<?= htmlspecialchars($logoPath) ?>?v=1" />
+  <link rel="apple-touch-icon" href="<?= htmlspecialchars($logoPath) ?>?v=1" />
+  <meta name="theme-color" content="<?= htmlspecialchars($themeColor) ?>" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-
   <style>
-    /* Responsive adjustments */
+    /* Full background gradient across entire screen */
+    body {
+      min-height: 100vh;
+      background: linear-gradient(to bottom right, #e5e7eb, #d1d5db, #9ca3af);
+      background-attachment: fixed;
+      color: #111;
+      font-family: sans-serif;
+    }
+
+    /* Sidebar styling */
+    #sidebar {
+      background-color: rgba(0, 0, 0, 1);
+      box-shadow: 4px 0 10px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Mobile Sidebar Behavior */
     @media (max-width: 1023px) {
       #sidebar {
         position: fixed;
         top: 0;
-        left: -16rem;
+        left: -18rem;
         height: 100%;
         z-index: 50;
         transition: left 0.3s ease-in-out;
@@ -82,8 +140,15 @@ foreach ($payslips as $p) {
       }
     }
 
-    /* Desktop collapse style */
+    /* Desktop Sidebar Behavior */
     @media (min-width: 1024px) {
+      #sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 18rem; /* Slightly wider so title fits fully */
+      }
       #sidebar.collapsed {
         width: 4rem !important;
         transition: width 0.3s ease-in-out;
@@ -97,61 +162,79 @@ foreach ($payslips as $p) {
       #sidebar.collapsed nav a {
         justify-content: center !important;
       }
+
+      /* Shift main content when sidebar is visible */
+      #main-content {
+        margin-left: 18rem;
+        transition: margin-left 0.3s ease-in-out;
+      }
+      #sidebar.collapsed ~ #main-content {
+        margin-left: 4rem;
+      }
     }
   </style>
 </head>
-
-<body class="bg-gradient-to-br from-gray-200 via-gray-300 to-gray-400 text-gray-900 font-sans">
-<div class="flex flex-col md:flex-row h-screen overflow-hidden">
-
+<body>
   <!-- Sidebar -->
-  <div id="sidebar" class="w-64 bg-black text-white flex flex-col transition-all duration-300 ease-in-out relative z-50">
-      <div class="p-6 border-b border-gray-700 flex items-center justify-between relative">
-          <h1 id="sidebarTitle" class="text-xl font-bold">Payslip & Loan Portal</h1>
-          <button onclick="toggleSidebar()" class="p-2 hover:bg-gray-800 rounded-lg transition-colors absolute right-3 top-5 md:static md:ml-auto">
-              <svg id="toggleIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
-              </svg>
-          </button>
-      </div>
+  <div id="sidebar" class="bg-black text-white flex flex-col transition-all duration-300 ease-in-out z-50">
+    <div class="p-6 border-b border-gray-700 flex items-center justify-between">
+      <h1 id="sidebarTitle"
+          class="text-xl font-bold whitespace-nowrap overflow-hidden md:whitespace-normal md:overflow-visible">
+        Payslip & Loan Portal
+      </h1>
+      <button onclick="toggleSidebar()" class="p-2 hover:bg-gray-800 rounded-lg transition-colors ml-2 flex-shrink-0">
+        <svg id="toggleIcon" class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
+        </svg>
+      </button>
+    </div>
 
-      <nav class="flex-1 p-4 space-y-2">
-          <a href="employeedashboard.php" class="w-full block text-left px-4 py-3 rounded-lg bg-white text-black flex items-center space-x-3">
-              <i class="bi bi-speedometer2"></i>
-              <span class="nav-text">Dashboard</span>
-          </a>
-          <a href="index.php" class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
-              <i class="bi bi-cash-coin"></i>
-              <span class="nav-text">My Payslips</span>
-          </a>
-
-          <a href="loan_employee.php" class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
-              <i class="bi bi-cash-stack"></i>
-              <span class="nav-text">My Loans</span>
-          </a>
-      </nav>
-
-      <div class="p-4 border-t border-gray-700">
-          <a href="logout.php" class="w-full block px-4 py-3 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center space-x-3">
-              <i class="bi bi-box-arrow-right"></i>
-              <span class="nav-text">Log Out</span>
-          </a>
-      </div>
+    <nav class="flex-1 p-4 space-y-2">
+      <a href="employeedashboard.php" class="w-full block text-left px-4 py-3 rounded-lg bg-white text-black flex items-center space-x-3">
+        <i class="bi bi-speedometer2"></i>
+        <span class="nav-text">Dashboard</span>
+      </a>
+      <a href="index.php" class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
+        <i class="bi bi-cash-coin"></i>
+        <span class="nav-text">My Payslips</span>
+      </a>
+      <a href="loan_employee.php" class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
+        <i class="bi bi-cash-stack"></i>
+        <span class="nav-text">Loans</span>
+      </a>
+    </nav>
   </div>
 
-  <!-- Main Content -->
-  <div class="flex-1 flex flex-col overflow-y-auto">
-    <header class="bg-black shadow-sm border-b border-gray-800 px-4 md:px-6 py-4 flex justify-between items-center">
-      <h2 class="text-xl font-semibold text-white">Welcome, <?= htmlspecialchars($_SESSION['complete_name'] ?? '') ?></h2>
-      <!-- Mobile menu button -->
+  <!-- Main Content Area -->
+  <div id="main-content" class="flex-1 flex flex-col overflow-y-auto transition-all duration-300">
+
+    <!-- Header -->
+    <header class="bg-black shadow-sm border-b border-gray-800 px-4 md:px-6 py-4 flex items-center justify-between text-white">
+      <!-- Burger (mobile only) -->
       <button onclick="toggleSidebar()" class="md:hidden p-2 rounded-lg hover:bg-gray-800 transition-colors text-white">
         <i class="bi bi-list text-xl"></i>
       </button>
-    </header>
-
+      <!-- Right side (account dropdown) -->
+      <div class="flex items-center space-x-4 ml-auto">
+        <div class="relative group">
+          <button id="accountToggle" class="flex items-center space-x-2 focus:outline-none">
+            <i class="bi bi-person-circle text-lg"></i>
+            <span class="text-sm font-small"><?= htmlspecialchars($_SESSION['complete_name'] ?? 'Account') ?></span>
+            <i class="bi bi-caret-down-fill text-xs"></i>
+          </button>
+          <div id="accountMenu"
+               class="hidden absolute right-0 mt-2 w-40 bg-white text-black rounded-md shadow-lg z-50">
+            <a href="logout.php" class="block px-4 py-2 hover:bg-gray-100 text-sm text-red-600">
+              <i class="bi bi-box-arrow-right me-2"></i>Logout
+            </a>
+          </div>
+        </div>
+      </div>
+    </header> 
+    <!-- Main -->
     <main class="flex-1 flex flex-col items-center justify-start py-10 px-4">
-
-      <div class="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-4xl">
+      <div class="bg-white rounded-2xl shadow-lg p-10 w-full max-w-4xl">
         <h1 class="text-center text-2xl font-bold text-black mb-6 tracking-wide">EMPLOYEE COMPENSATION DASHBOARD</h1>
 
         <!-- Employee Info -->
@@ -188,21 +271,21 @@ foreach ($payslips as $p) {
         <!-- Compensation Overview -->
         <h2 class="text-center text-lg font-bold mb-4">COMPENSATION OVERVIEW</h2>
 
-        <div class="bg-gray-100 rounded-lg text-center p-6 mb-6 shadow-inner">
-          <p class="text-gray-600 text-sm font-medium">Total Compensation</p>
+        <div class="border shadow-md p-4 rounded-lg text-center p-6 mb-6">
+          <p class="text-gray-600 text-xl font-semibold">Total Compensation</p>
           <p class="text-3xl font-bold text-black mt-1">₱<?= number_format($totalNetPay, 2) ?></p>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-          <div class="bg-gray-100 rounded-lg p-4 text-center shadow-sm">
+          <div class="border shadow-md p-4 rounded-lg text-center">
             <p class="text-gray-600 text-sm font-semibold">Total EE SSS</p>
             <p class="text-lg font-bold text-black mt-1">₱<?= number_format($totalSSS, 2) ?></p>
           </div>
-          <div class="bg-gray-100 rounded-lg p-4 text-center shadow-sm">
+          <div class="border shadow-md p-4 rounded-lg text-center">
             <p class="text-gray-600 text-sm font-semibold">Total EE PHIC</p>
             <p class="text-lg font-bold text-black mt-1">₱<?= number_format($totalPHIC, 2) ?></p>
           </div>
-          <div class="bg-gray-100 rounded-lg p-4 text-center shadow-sm">
+          <div class="border shadow-md p-4 rounded-lg text-center">
             <p class="text-gray-600 text-sm font-semibold">Total EE PAGIBIG</p>
             <p class="text-lg font-bold text-black mt-1">₱<?= number_format($totalHDMF, 2) ?></p>
           </div>
@@ -210,31 +293,43 @@ foreach ($payslips as $p) {
       </div>
     </main>
   </div>
-</div>
 
-<!-- ✅ Unified Sidebar Toggle Logic -->
-<script>
-function toggleSidebar() {
-  const sidebar = document.getElementById('sidebar');
-  const isMobile = window.innerWidth < 1024;
+  <!-- Scripts -->
+  <script>
+  function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const isMobile = window.innerWidth < 1024;
 
-  if (isMobile) {
-    // Mobile: slide in/out
-    sidebar.classList.toggle('active');
-  } else {
-    // Desktop: collapse/expand
-    sidebar.classList.toggle('collapsed');
-
-    const toggleIcon = document.getElementById('toggleIcon');
-    if (sidebar.classList.contains('collapsed')) {
-      toggleIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>';
+    if (isMobile) {
+      sidebar.classList.toggle('active');
     } else {
-      toggleIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>';
+      sidebar.classList.toggle('collapsed');
+      const toggleIcon = document.getElementById('toggleIcon');
+      toggleIcon.innerHTML = sidebar.classList.contains('collapsed')
+        ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>'
+        : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>';
     }
   }
-}
+  // Account dropdown toggle
+document.getElementById('accountToggle').addEventListener('click', function() {
+  document.getElementById('accountMenu').classList.toggle('hidden');
+});
+document.addEventListener('click', function(e) {
+  const toggle = document.getElementById('accountToggle');
+  const menu = document.getElementById('accountMenu');
+  if (!toggle.contains(e.target) && !menu.contains(e.target)) {
+    menu.classList.add('hidden');
+  }
+});
+  </script>
+  <script>
+window.addEventListener("pageshow", function (event) {
+  if (event.persisted) {
+    // Force reload if coming from browser cache (like pressing Back)
+    window.location.reload();
+  }
+});
 </script>
+
 </body>
 </html>
-
-

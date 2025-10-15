@@ -2,8 +2,8 @@
 session_start();
 require __DIR__ . '/vendor/autoload.php';
 
-//$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 // Supabase config
 $projectUrl = $_ENV['SUPABASE_URL'];
@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $showWarning = true;
         $warningMessage = "Please enter a new password.";
     } else {
-        // 🔹 Check if token exists in Supabase and is still valid
+        //Check if token exists in Supabase and is still valid
         $url = $projectUrl . "/rest/v1/employees_credentials?reset_token=eq." . urlencode($token);
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $user = $data[0];
 
-            // ✅ Make sure both are compared in UTC
+            // Make sure both are compared in UTC
             date_default_timezone_set('UTC');
             $currentTime = time();
             $expiryTime  = strtotime($user['reset_token_expires']);
@@ -55,10 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $showWarning = true;
                 $warningMessage = "Reset link has expired. Please request a new one.";
             } else {
-                // 🔹 Hash the new password
+                // Hash the new password
                 $hashedPassword = password_hash($new_password, PASSWORD_BCRYPT);
 
-                // 🔹 Update password in Supabase
+                // Update password in Supabase
                 $updateUrl = $projectUrl . "/rest/v1/employees_credentials?employee_id=eq." . urlencode($user['employee_id']);
                 $payload = json_encode([
                     "password" => $hashedPassword,
@@ -295,4 +295,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </script>
 </body>
 </html>
-
