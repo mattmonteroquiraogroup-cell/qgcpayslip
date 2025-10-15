@@ -14,8 +14,8 @@ if ($_SESSION['role'] !== 'admin') {
 }
 
 // Load .env for Supabase
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+//$dotenv = Dotenv::createImmutable(__DIR__);
+//$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -617,3 +617,4 @@ function exportToExcel() {
 </script>
 </body>
 </html>
+
