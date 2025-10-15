@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <p>Please click the link below to set your password:</p>
                                 <p><a href='$resetLink'>$resetLink</a></p>
                                 <p>This link expires on <b>$expiresDisplayFormatted</b>.</p>
-                                <p>Thank you,<br>Payslip Portal Team</p>"
+                                <p>Thank you</p>"
                         ]);
 
                         $apiInstance->sendTransacEmail($sendSmtpEmail);
@@ -412,4 +412,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 </body>
 </html>
+
 
