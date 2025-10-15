@@ -107,7 +107,7 @@ foreach ($payslips as $p) {
   <!-- Sidebar -->
   <div id="sidebar" class="w-64 bg-black text-white flex flex-col transition-all duration-300 ease-in-out relative z-50">
       <div class="p-6 border-b border-gray-700 flex items-center justify-between relative">
-          <h1 id="sidebarTitle" class="text-xl font-bold">Payslip Portal</h1>
+          <h1 id="sidebarTitle" class="text-xl font-bold">Payslip & Loan Portal</h1>
           <button onclick="toggleSidebar()" class="p-2 hover:bg-gray-800 rounded-lg transition-colors absolute right-3 top-5 md:static md:ml-auto">
               <svg id="toggleIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
@@ -236,4 +236,5 @@ function toggleSidebar() {
 </script>
 </body>
 </html>
+
 
