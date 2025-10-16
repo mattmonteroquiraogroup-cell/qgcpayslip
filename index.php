@@ -495,9 +495,10 @@ document.addEventListener('click', function(e) {
       document.getElementById("loadingOverlay").classList.remove("hidden");
       document.getElementById("payslipForm").submit();
     }
-
+</script>    
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script> 
+   
 <script>
 document.getElementById("downloadPdfBtn")?.addEventListener("click", async () => {
   const { jsPDF } = window.jspdf;
@@ -506,6 +507,16 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
     alert("No payslip available to download.");
     return;
   }
+
+  // ----- Force Desktop Layout -----
+  const originalWidth = src.style.width;
+  const originalTransform = src.style.transform;
+  const originalScale = src.style.scale;
+  const originalMargin = src.style.margin;
+
+  src.style.width = "1024px"; // force desktop width
+  src.style.transform = "scale(1)";
+  src.style.margin = "0 auto";
 
   // Ensure all content is visible
   const originalOverflow = document.body.style.overflow;
@@ -516,9 +527,9 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
   src.style.display = "block";
 
   // Small delay for layout stabilization
-  await new Promise(r => setTimeout(r, 150));
+  await new Promise(r => setTimeout(r, 200));
 
-  // Capture with html2canvas
+  // ----- Capture with html2canvas -----
   const SCALE = 3; // higher scale = sharper image
   let canvas;
   try {
@@ -527,30 +538,38 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
       useCORS: true,
       backgroundColor: "#ffffff",
       scrollY: 0,
-      windowWidth: document.documentElement.scrollWidth,
-      windowHeight: document.body.scrollHeight,
+      windowWidth: 1024, // force desktop width
+      windowHeight: src.scrollHeight,
       logging: false
     });
   } catch (err) {
     console.error("Canvas generation failed:", err);
     alert("Error generating PDF. Please try again.");
+    // Restore styles before exiting
+    src.style.width = originalWidth;
+    src.style.transform = originalTransform;
+    src.style.scale = originalScale;
+    src.style.margin = originalMargin;
     document.body.style.overflow = originalOverflow;
     src.style.display = originalDisplay;
     return;
   }
 
   // Restore DOM state
+  src.style.width = originalWidth;
+  src.style.transform = originalTransform;
+  src.style.scale = originalScale;
+  src.style.margin = originalMargin;
   document.body.style.overflow = originalOverflow;
   src.style.display = originalDisplay;
 
-  // Prepare PDF setup
+  // ----- Prepare PDF setup -----
   const pdf = new jsPDF("p", "mm", "a4");
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
 
-  // Adjusted margins (tight header)
   const marginLeft = 10;
-  const marginTop = 1.5; // only 1.5 mm from top edge (tight logo)
+  const marginTop = 1.5; // tight header
   const imgWidth = pageWidth - marginLeft * 2;
   const pageHeightUsable = pageHeight - marginLeft * 2;
 
@@ -560,7 +579,7 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
   let yOffset = 0;
   let pageIndex = 0;
 
-  // Slice the canvas into pages if needed
+  // ----- Slice the canvas into multiple pages if needed -----
   while (yOffset < canvas.height) {
     const pageCanvas = document.createElement("canvas");
     pageCanvas.width = canvas.width;
@@ -581,8 +600,8 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
     pdf.addImage(
       imgData,
       "PNG",
-      marginLeft,   // left margin
-      marginTop,    // reduced top margin
+      marginLeft,
+      marginTop,
       imgWidth,
       (pageCanvas.height * imgWidth) / canvas.width
     );
@@ -591,7 +610,7 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
     pageIndex++;
   }
 
-  // Footer (unchanged)
+  // -----Footer Section -----
   pdf.setTextColor(120, 120, 120); 
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(9.5);
@@ -613,7 +632,7 @@ document.getElementById("downloadPdfBtn")?.addEventListener("click", async () =>
   pdf.text("Managed by QUIRAO GROUP OF COMPANIES, OPC", pageWidth / 2, pageHeight - 15, { align: "center" });
   pdf.text("© 2025 All rights reserved.", pageWidth / 2, pageHeight - 10, { align: "center" });
 
-  // Save the file
+  // ----- Save the file -----
   const employeeName = <?= json_encode($_SESSION['complete_name'] ?? 'Employee') ?>;
   try {
     pdf.save(`PAYSLIP_${employeeName.replace(/\s+/g, "_")}.pdf`);
@@ -647,5 +666,4 @@ window.addEventListener("pageshow", function (event) {
 });
 </script>
 </body>
-
 </html>
