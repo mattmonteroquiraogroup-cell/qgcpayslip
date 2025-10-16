@@ -341,87 +341,101 @@ $current_page = basename($_SERVER['PHP_SELF']);
             </div>
           </div>
 
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            <div class="overflow-x-auto">
-              <h3 class="font-semibold mb-2">Earnings</h3>
-              <table class="w-full text-sm border-t border-gray-300">
-                <tr class="border-b border-gray-200">
-                  <td>Description</td>
-                  <td class="text-right">Hours</td>
-                  <td class="text-right">Amount</td>
-                </tr>
+   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
+  <!-- Earnings -->
+  <div class="overflow-x-auto flex flex-col justify-between bg-white rounded-md">
+    <div>
+      <h3 class="font-semibold mb-2">Earnings</h3>
+      <table class="w-full text-sm border-t border-gray-300">
+        <tr class="border-b border-gray-200">
+          <td>Description</td>
+          <td class="text-right">Hours</td>
+          <td class="text-right">Amount</td>
+        </tr>
+        <?php
+        $earnings = [
+          'basic_pay' => ['label' => 'Basic Pay', 'hours' => 'no_of_hours'],
+          'ot_pay' => ['label' => 'Overtime', 'hours' => 'ot_hours'],
+          'rdot_pay' => ['label' => 'Rest Day OT', 'hours' => 'rdot_hours'],
+          'night_dif_pay' => ['label' => 'Night Differential', 'hours' => 'nd_hours'],
+          'special_holiday_pay' => ['label' => 'Special Holiday Pay', 'hours' => 'special_hol_hours'],
+          'regular_holiday_pay' => ['label' => 'Regular Holiday Pay', 'hours' => 'reg_hol_hours'],
+          'special_holiday_ot_pay' => ['label' => 'Special Holiday OT Pay', 'hours' => 'special_hol_ot_hours'],
+          'regular_holiday_ot_pay' => ['label' => 'Regular Holiday OT Pay', 'hours' => 'reg_hol_ot_hours'],
+          'leave_w_pay' => ['label' => 'Leave with Pay'],
+          'allowance' => ['label' => 'Allowance'],
+          'sign_in_bonus' => ['label' => 'Sign-in Bonus'],
+          'other_adjustment' => ['label' => 'Other Adjustment']
+        ];
+        $hasEarnings = false;
+        foreach ($earnings as $key => $meta) {
+          $amount = floatval($selectedPayslip[$key] ?? 0);
+          if ($amount > 0) {
+            $hasEarnings = true;
+            echo "<tr><td>{$meta['label']}</td>";
+            echo "<td class='text-right'>" . (!empty($meta['hours']) && !empty($selectedPayslip[$meta['hours']])
+                  ? htmlspecialchars($selectedPayslip[$meta['hours']]) . ' hrs' : '') . "</td>";
+            echo "<td class='text-right'>₱" . number_format($amount, 2) . "</td></tr>";
+          }
+        }
+        if (!$hasEarnings) {
+          echo "<tr><td colspan='3' class='text-center text-gray-500 italic py-2'>No earnings available</td></tr>";
+        }
+        ?>
+      </table>
+    </div>
+    <p class="font-semibold mt-2 text-right border-t border-gray-300 pt-2 mb-4">
+      Total Compensation: ₱<?= number_format($selectedPayslip['total_compensation'] ?? 0, 2) ?>
+    </p>
+  </div>
 
-                <tr>
-                  <td>Total Basic</td>
-                  <td class="text-right">
-                    <?= htmlspecialchars($selectedPayslip['no_of_hours'] ?? '0') ?> hrs
-                  </td>
-                  <td class="text-right">
-                    ₱<?= number_format($selectedPayslip['basic_pay'] ?? 0, 2) ?>
-                  </td>
-                </tr>
-
-                <?php
-                $earnings = [
-                  'ot_pay' => ['label' => 'Overtime', 'hours' => 'ot_hours'],
-                  'rdot_pay' => ['label' => 'Rest Day OT', 'hours' => 'rdot_hours'],
-                  'night_dif_pay' => ['label' => 'Night Differential', 'hours' => 'nd_hours'],
-                  'allowance' => ['label' => 'Allowance'],
-                  'other_adjustment' => ['label' => 'Other Adjustment']
-                ];
-
-                foreach ($earnings as $key => $meta) {
-                  $amount = floatval($selectedPayslip[$key] ?? 0);
-                  if ($amount > 0) {
-                    echo "<tr><td>{$meta['label']}</td>";
-                    echo "<td class='text-right'>" . (!empty($meta['hours']) && !empty($selectedPayslip[$meta['hours']]) ? htmlspecialchars($selectedPayslip[$meta['hours']]) . ' hrs' : '') . "</td>";
-                    echo "<td class='text-right'>₱" . number_format($amount, 2) . "</td></tr>";
-                  }
-                }
-                ?>
-              </table>
-              <p class="font-semibold mt-2 text-right">
-                Total Compensation:
-                ₱<?= number_format($selectedPayslip['total_compensation'] ?? 0, 2) ?>
-              </p>
-            </div>
-            <div class="overflow-x-auto">
-              <h3 class="font-semibold mb-2">Deductions</h3>
-              <table class="w-full text-sm border-t border-gray-300">
-                <tr class="border-b border-gray-200">
-                  <td>Description</td>
-                  <td class="text-right">Amount</td>
-                </tr>
-                <?php
-                $deductions = [
-                  'less_late' => 'Late',
-                  'less_absent' => 'Absent',
-                  'less_sss' => 'SSS',
-                  'less_phic' => 'PHIC',
-                  'less_hdmf' => 'HDMF',
-                  'less_whtax' => 'WHTAX'
-                ];
-                $hasDeduction = false;
-                foreach ($deductions as $key => $label) {
-                  $amount = floatval($selectedPayslip[$key] ?? 0);
-                  if ($amount > 0) {
-                    $hasDeduction = true;
-                    echo "<tr><td>{$label}</td><td class='text-right'>₱" . number_format($amount, 2) . "</td></tr>";
-                  }
-                }
-                if (!$hasDeduction) {
-                  echo "<tr><td colspan='2' class='text-center text-gray-500 italic py-2'>No deductions</td></tr>";
-                }
-                ?>
-             </table>
-<p class="font-semibold mt-2 text-right mb-4">
-  Total Deduction:
-  ₱<?= number_format($selectedPayslip['total_deduction'] ?? 0, 2) ?>
-</p>
-
-            </div>
-          </div>
-          <div class="bg-gray-100 rounded-md p-3 text-center mt-6">
+  <!-- Deductions -->
+  <div class="overflow-x-auto flex flex-col justify-between bg-white rounded-md">
+    <div>
+      <h3 class="font-semibold mb-2">Deductions</h3>
+      <table class="w-full text-sm border-t border-gray-300">
+        <tr class="border-b border-gray-200">
+          <td>Description</td>
+          <td class="text-right">Amount</td>
+        </tr>
+        <?php
+        $deductions = [
+          'less_late' => 'Late',
+          'less_absent' => 'Absent',
+          'less_sss' => 'SSS',
+          'less_phic' => 'PHIC',
+          'less_hdmf' => 'HDMF',
+          'less_whtax' => 'Withholding Tax',
+          'less_sss_loan' => 'SSS Loan',
+          'less_sss_sloan' => 'SSS Salary Loan',
+          'less_pagibig_loan' => 'Pag-IBIG Loan',
+          'less_comp_cash_advance' => 'Cash Advance',
+          'less_company_loan' => 'Company Loan',
+          'less_product_equip_loan' => 'Product/Equipment Loan',
+          'less_uniform' => 'Uniform Deduction',
+          'less_accountability' => 'Accountability',
+          'salary_overpaid_deduction' => 'Salary Overpaid Deduction'
+        ];
+        $hasDeduction = false;
+        foreach ($deductions as $key => $label) {
+          $amount = floatval($selectedPayslip[$key] ?? 0);
+          if ($amount > 0) {
+            $hasDeduction = true;
+            echo "<tr><td>{$label}</td><td class='text-right'>₱" . number_format($amount, 2) . "</td></tr>";
+          }
+        }
+        if (!$hasDeduction) {
+          echo "<tr><td colspan='2' class='text-center text-gray-500 italic py-2'>No deductions</td></tr>";
+        }
+        ?>
+      </table>
+    </div>
+    <p class="font-semibold mt-2 text-right border-t border-gray-300 pt-2 mb-4">
+      Total Deduction: ₱<?= number_format($selectedPayslip['total_deduction'] ?? 0, 2) ?>
+    </p>
+  </div>
+</div>
+<div class="bg-gray-100 rounded-md p-3 text-center mt-6">
   <p class="font-bold text-lg sm:text-xl">
     NET PAY:
     ₱<?= number_format((float)str_replace([',', ' '], '', $selectedPayslip['net_pay'] ?? 0), 2) ?>
