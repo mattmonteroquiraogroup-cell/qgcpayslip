@@ -1,7 +1,14 @@
 <?php
 session_start();
 require __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/temporary_block_page.php';
 use Dotenv\Dotenv;
+
+// Temporary block, remove after
+if (!$isLoanFeatureActive) {
+    echo "<script>alert('Loan requests are temporarily unavailable.'); window.location.href='employeedashboard.php';</script>";
+    exit();
+}
 
 // Restrict access to employees only
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'employee') {
@@ -514,3 +521,4 @@ window.addEventListener("pageshow", function (event) {
 </body>
 
 </html>
+
