@@ -1,6 +1,7 @@
 <?php
 session_start();
 require __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/temporary_block_page.php';
 
 if (!isset($_SESSION['employee_id'])) {
     header("Location: login.php");
@@ -224,10 +225,25 @@ $current_page = basename($_SERVER['PHP_SELF']);
       <i class="bi bi-cash-coin"></i>
       <span class="nav-text">My Payslips</span>
     </a>
-    <a href="loan_employee.php" class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
+   <!--- <a href="loan_employee.php" class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
       <i class="bi bi-cash-stack"></i>
       <span class="nav-text">Loans</span>
-    </a>
+    </a> temporary block, restore after --->
+<?php if ($isLoanFeatureActive): ?>
+  <a href="loan_employee.php"
+     class="w-full block text-left px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 flex items-center space-x-3">
+    <i class="bi bi-cash-stack"></i>
+    <span class="nav-text">Loans</span>
+  </a>
+<?php else: ?>
+  <a href="#"
+     onclick="event.preventDefault(); alert('Loan requests are temporarily unavailable. Please check back later.');"
+     class="w-full block text-left px-4 py-3 rounded-lg text-gray-500 flex items-center space-x-3 opacity-50 cursor-not-allowed"
+     title="Loan requests are temporarily unavailable">
+    <i class="bi bi-cash-stack"></i>
+    <span class="nav-text">Loans</span>
+  </a>
+<?php endif; ?>
   </nav>
 </div>
 
@@ -681,3 +697,4 @@ window.addEventListener("pageshow", function (event) {
 </script>
 </body>
 </html>
+
