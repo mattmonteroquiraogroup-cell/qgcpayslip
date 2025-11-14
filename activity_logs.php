@@ -26,8 +26,8 @@ if ($ROLE === 'finance' && !in_array(basename($_SERVER['PHP_SELF']), $FINANCE_AL
 
 
 // Load environment variables
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+//$dotenv = Dotenv::createImmutable(__DIR__);
+//$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -257,3 +257,4 @@ function toggleSidebar() {
 </script>
 </body>
 </html>
+
