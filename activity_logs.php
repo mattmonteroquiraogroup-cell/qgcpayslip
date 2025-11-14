@@ -7,15 +7,27 @@ use Dotenv\Dotenv;
 const LOGS_PER_PAGE = 10;
 // ---------------------
 
-// Protect admin access
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+// Protect access for logged-in users (admin + finance)
+if (!isset($_SESSION['role'])) {
     header("Location: login.php");
     exit();
 }
 
+$ROLE = $_SESSION['role'];
+
+// Include role guard for overlay & restricted nav handling
+include 'role_guard.php';
+
+// Optional: Redirect finance directly to allowed pages if accessing restricted ones
+if ($ROLE === 'finance' && !in_array(basename($_SERVER['PHP_SELF']), $FINANCE_ALLOWED)) {
+    header("Location: admin_loan.php");
+    exit();
+}
+
+
 // Load environment variables
-//$dotenv = Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -130,7 +142,7 @@ function paginationLinkClass($page, $current) {
                 <i class="bi bi-cash-stack"></i>
                 <span class="nav-text">Track Loans</span>
             </button>
-            <button onclick="window.location.href='admin_logs.php'"
+            <button onclick="window.location.href='activity_logs.php'"
               class="w-full text-left px-4 py-3 rounded-lg flex items-center space-x-3 <?= navButtonClass('activity_logs.php', $current_page_file) ?>">
                 <i class="bi bi-clock-history"></i>
                 <span class="nav-text">Recent Activities</span>
@@ -244,5 +256,4 @@ function toggleSidebar() {
 }
 </script>
 </body>
-
 </html>
