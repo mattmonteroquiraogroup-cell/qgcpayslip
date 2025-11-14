@@ -12,8 +12,8 @@ if (!isset($_SESSION['role'])) {
 }
 
 // Load .env for Supabase
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+//$dotenv = Dotenv::createImmutable(__DIR__);
+//$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -694,3 +694,4 @@ $('#edit_status').on('change', function() {
 </script>
 </body>
 </html>
+
