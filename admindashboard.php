@@ -11,356 +11,338 @@ if (!isset($_SESSION['role'])) {
     exit();
 }
 
-
-// Load environment variables
+// Load .env for Supabase
 $dotenv = Dotenv::createImmutable(__DIR__);
 $dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
-$table      = "payslip_content";
+$table      = "loans";
 
-// Activity Logs function (added)
+// Log activity
 function logActivity($action, $description) {
     global $projectUrl, $apiKey;
-
     $admin_id = $_SESSION['employee_id'] ?? 'ADMIN';
     $admin_name = $_SESSION['complete_name'] ?? 'Administrator';
-
-    $logData = [[
+    $payload = json_encode([[
         'admin_id' => $admin_id,
         'admin_name' => $admin_name,
         'action' => $action,
         'description' => $description
-    ]];
-
-    $payload = json_encode($logData);
-
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "$projectUrl/rest/v1/activity_logs");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "apikey: $apiKey",
-        "Authorization: Bearer $apiKey",
-        "Content-Type: application/json",
-        "Prefer: return=minimal"
+    ]]);
+    $ch = curl_init("$projectUrl/rest/v1/activity_logs");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "apikey: $apiKey",
+            "Authorization: Bearer $apiKey",
+            "Content-Type: application/json",
+            "Prefer: return=minimal"
+        ],
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $payload
     ]);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
     curl_exec($ch);
     curl_close($ch);
 }
 
+// --- Fetch loans ---
+function getLoans() {
+    global $projectUrl, $apiKey, $table;
+    $role = $_SESSION['role'] ?? 'guest';
+    
+    // Admin sees only active loans; Finance sees all
+    if ($role === 'admin') {
+        $url = "$projectUrl/rest/v1/$table?select=*&status=eq.active";
+    } else {
+        $url = "$projectUrl/rest/v1/$table?select=*";
+    }
 
-$valid_columns = [
-    "payroll_date","cutoff_date","employee_id","name","position","subsidiary","salary_type",
-    "late_minutes","days_absent","no_of_hours","basic_rate","basic_pay","ot_hours","ot_rate","ot_pay",
-    "rdot_hours","rdot_rate","rdot_pay","nd_hours","nd_rate","night_dif_pay","leave_w_pay",
-    "special_hol_hours","special_hol_rate","special_holiday_pay","reg_hol_hours","reg_hol_rate","regular_holiday_pay",
-    "special_hol_ot_hours","special_hol_ot_rate","special_holiday_ot_pay","reg_hol_ot_hours",
-    "reg_hol_ot_rate","regular_holiday_ot_pay","allowance","sign_in_bonus","other_adjustment",
-    "total_compensation","less_late","less_absent","less_sss","less_phic","less_hdmf","less_whtax",
-    "less_sss_loan","less_sss_sloan","less_pagibig_loan","less_comp_cash_advance","less_company_loan",
-    "less_product_equip_loan","less_uniform","less_accountability","salary_overpaid_deduction",
-    "total_deduction","net_pay"
+    $ch = curl_init($url);
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "apikey: $apiKey",
+            "Authorization: Bearer $apiKey",
+            "Content-Type: application/json"
+        ]
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($httpCode !== 200) {
+        echo "<pre> Error fetching loans. HTTP $httpCode<br>Response:<br>$response</pre>";
+    }
+    return json_decode($response, true);
+}
+
+// --- Update loan ---
+if (isset($_POST['action']) && $_POST['action'] === 'update_loan') {
+    $loan_id       = $_POST['loan_id'];
+    $employee_id   = $_POST['employee_id'];
+    $loan_amount   = $_POST['loan_amount'];
+    $payment_terms = $_POST['payment_terms'];
+    $payment_amount= $_POST['payment_amount'] ?: 0;
+    $start_date    = $_POST['start_date'];
+    $end_date      = $_POST['end_date'];
+    $status        = $_POST['status'] ?: 'pending';
+    $loan_type     = $_POST['loan_type'];
+    $purpose       = $_POST['purpose'];
+
+$updateData = [
+    "loan_amount"    => (float)$loan_amount,
+    "payment_terms"  => $payment_terms,
+    // Keep per-cutoff payment value — don’t zero it out
+    "payment_amount" => (float)$payment_amount,
+    "start_date"     => $start_date ?: null,
+    "end_date"       => $end_date ?: null,
+    "status"         => $status,
+    "loan_type"      => $loan_type,
+    "purpose"        => $purpose
 ];
 
-function clean_utf8($value) {
-    return is_string($value) ? mb_convert_encoding($value, 'UTF-8', 'UTF-8') : $value;
+// If marking as active, auto-fill date_approved
+if ($status === 'active' && empty($loan['date_approved'])) {
+    $updateData["date_approved"] = date("M-d-y");
+} else if ($status === 'pending') {
+    $updateData["date_approved"] = null;
 }
 
-$uploadSuccess = false;
+// If the loan is being activated and balance is zero, set it equal to loan amount
+if ($status === 'active' && (empty($loan['balance']) || $loan['balance'] == 0)) {
+    $updateData["balance"] = (float)$loan_amount;
+}
 
-// Upload Employee CSV
-$uploadEmployeeError = null;
+// release date and notes.
+$release_date = $_POST['release_date'] ?: null;
+$release_notes = $_POST['release_notes'] ?: null;
 
-if (isset($_POST['upload_employee_csv'])) {
-    if (is_uploaded_file($_FILES['employee_csv']['tmp_name'])) {
-        $csv_file = fopen($_FILES['employee_csv']['tmp_name'], 'r');
-        $headers = fgetcsv($csv_file);
+$updateData["release_date"] = $release_date;
+$updateData["release_notes"] = $release_notes;
 
-        if (!$headers) {
-            $uploadEmployeeError = "Invalid CSV file — no headers found.";
-        } else {
-            // Normalize headers
-            $headers = array_map(fn($h) => strtolower(trim($h)), $headers);
 
-            // Required columns
-            $required_columns = ['employee_id', 'complete_name', 'position', 'email', 'subsidiary'];
-            $missing = array_diff($required_columns, $headers);
+    $payload = json_encode($updateData);
 
-            if (!empty($missing)) {
-                $uploadEmployeeError = "Invalid CSV format — missing required columns: " . implode(', ', $missing);
-            } else {
-                $rows = [];
-                $lineNumber = 1;
+    $ch = curl_init("$projectUrl/rest/v1/$table?id=eq.$loan_id");
+    curl_setopt_array($ch, [
+        CURLOPT_CUSTOMREQUEST => "PATCH",
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_HTTPHEADER => [
+            "apikey: $apiKey",
+            "Authorization: Bearer $apiKey",
+            "Content-Type: application/json",
+            "Prefer: return=representation"
+        ]
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
 
-                while (($data = fgetcsv($csv_file)) !== FALSE) {
-                    $lineNumber++;
-                    if (count($data) != count($headers)) {
-                        $uploadEmployeeError = "CSV format error on line $lineNumber — column count mismatch.";
-                        break;
-                    }
-
-                    $row = array_combine($headers, $data);
-                    if (empty($row['employee_id']) || empty($row['complete_name'])) continue;
-
-                    $rows[] = [
-                        "employee_id" => trim($row['employee_id']),
-                        "complete_name" => trim($row['complete_name']),
-                        "position" => trim($row['position'] ?? ''),
-                        "email" => trim($row['email'] ?? ''),
-                        "subsidiary" => trim($row['subsidiary'] ?? ''),
-                        "role" => $row['role'] ?? 'employee',
-                        "status" => 'active'
-                    ];
-                }
-            }
-        }
-
-        fclose($csv_file);
-
-        if (!$uploadEmployeeError && empty($rows)) {
-            $uploadEmployeeError = "No valid employee data found in CSV.";
-        }
-
-        // ✅ Step 1: Check for duplicates in Supabase
-        if (!$uploadEmployeeError && !empty($rows)) {
-            $employee_ids = array_column($rows, 'employee_id');
-            $unique_ids = array_unique($employee_ids);
-            $duplicates_in_csv = array_diff_assoc($employee_ids, $unique_ids);
-
-            if (!empty($duplicates_in_csv)) {
-                $uploadEmployeeError = "Duplicate employee IDs found in CSV: " . implode(', ', array_unique($duplicates_in_csv));
-            } else {
-                // Check Supabase for existing IDs
-                $id_list = implode('","', $unique_ids);
-                $url = "$projectUrl/rest/v1/employees_credentials?employee_id=in.(\"$id_list\")";
-
-                $ch = curl_init();
-                curl_setopt($ch, CURLOPT_URL, $url);
-                curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                    "apikey: $apiKey",
-                    "Authorization: Bearer $apiKey",
-                ]);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                $response = curl_exec($ch);
-                curl_close($ch);
-
-                $existing = json_decode($response, true);
-                if (!empty($existing)) {
-                    $existing_ids = array_column($existing, 'employee_id');
-                    $uploadEmployeeError = "Duplicate employee IDs already exist in database: " . implode(', ', $existing_ids);
-                }
-            }
-        }
-
-        // Upload if no errors
-        if (!$uploadEmployeeError) {
-            $payload = json_encode($rows, JSON_UNESCAPED_UNICODE);
-
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, "$projectUrl/rest/v1/employees_credentials");
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                "apikey: $apiKey",
-                "Authorization: Bearer $apiKey",
-                "Content-Type: application/json",
-                "Prefer: resolution=merge-duplicates"
-            ]);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $response = curl_exec($ch);
-            $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($httpcode == 201) {
-                $uploadEmployeeSuccess = true;
-                logActivity("Upload Employees", "Uploaded employee CSV with " . count($rows) . " records.");
-            } else {
-                $uploadEmployeeError = "Error uploading employees — please check your CSV data.";
-            }
-        }
+    if ($httpCode == 200 || $httpCode == 204) {
+        logActivity("Update Loan", "Updated loan for employee $employee_id (Status: $status)");
+        header("Location: admin_loan.php?updated=success");
+        exit();
     } else {
-        $uploadEmployeeError = "No file uploaded — please select a CSV file.";
+        echo "<script>alert('Failed to update loan. Please try again.');</script>";
     }
 }
 
-// Upload Payslip CSV (with validation + warning modal)
-$uploadPayslipError = null;
+// --- Add Payment ---
+if (isset($_POST['action']) && $_POST['action'] === 'add_payment') {
+    $loan_id        = $_POST['loan_id']; // UUID string from form
+    $employee_id    = $_POST['employee_id'];
+    $payment_amount = (float)$_POST['payment_amount'];
+    $payment_date   = $_POST['payment_date'];
+    $notes          = $_POST['notes'] ?? '';
 
-if (isset($_POST['submit'])) {
-    if (is_uploaded_file($_FILES['csv_file']['tmp_name'])) {
-        $csv_file = fopen($_FILES['csv_file']['tmp_name'], 'r');
-        $headers = fgetcsv($csv_file);
+    // Insert payment record (each one saved separately)
+    $paymentData = [[
+        'loan_id' => $loan_id,
+        'employee_id' => $employee_id,
+        'payment_amount' => $payment_amount,
+        'payment_date' => $payment_date,
+        'notes' => $notes
+    ]];
+    $payload = json_encode($paymentData);
 
-        if (!$headers) {
-            $uploadPayslipError = "Invalid CSV file — no headers found.";
-        } else {
-            // Normalize headers
-            $headers = array_map(function($h) {
-                $h = strtolower(trim($h));
-                $h = preg_replace('/\s+/', '_', $h);
-                $h = preg_replace('/[^a-z0-9_]/', '', $h);
-                return $h;
-            }, $headers);
+    $ch = curl_init("$projectUrl/rest/v1/loan_payments");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "apikey: $apiKey",
+            "Authorization: Bearer $apiKey",
+            "Content-Type: application/json",
+            "Prefer: return=representation"
+        ],
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $payload
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
 
-            // Header mapping
-            $header_map = [
-                "netpay" => "net_pay",
-                "net_pay_" => "net_pay",
-                "salaryoverpaiddeduction" => "salary_overpaid_deduction",
-                "salary_overpaid" => "salary_overpaid_deduction",
-                "salary_overpaid_deduction" => "salary_overpaid_deduction",
-                "payrolldate" => "payroll_date",
-                "cutoffdate" => "cutoff_date"
-            ];
-
-            foreach ($headers as &$h) {
-                if (isset($header_map[$h])) $h = $header_map[$h];
-            }
-            unset($h);
-
-            // Validate against valid columns
-            global $valid_columns;
-            $invalid_headers = array_diff($headers, $valid_columns);
-            if (!empty($invalid_headers)) {
-                $uploadPayslipError = "Invalid CSV format — unknown columns: " . implode(', ', $invalid_headers);
-            }
-        }
-
-        if (!$uploadPayslipError) {
-            $rows = [];
-            $lineNumber = 1;
-
-            while (($data = fgetcsv($csv_file)) !== FALSE) {
-                $lineNumber++;
-
-                if (count($data) != count($headers)) {
-                    $uploadPayslipError = "CSV format error on line $lineNumber — column count does not match header.";
-                    break;
-                }
-
-                $data = array_slice($data, 0, count($headers));
-                $row = array_combine($headers, $data);
-
-                foreach ($row as $key => $value) {
-                    if ($value === "" || $value === null) {
-                        $row[$key] = null;
-                    } elseif ($key === "payroll_date") {
-                        $ts = strtotime($value);
-                        $row[$key] = $ts ? date("Y-m-d", $ts) : null;
-                    } else {
-                        $row[$key] = clean_utf8($value);
-                    }
-                }
-
-                $rows[] = $row;
-            }
-            fclose($csv_file);
-
-            if (!$uploadPayslipError && empty($rows)) {
-                $uploadPayslipError = "No valid data found in CSV.";
-            }
-
-            // Upload to Supabase only if valid
-            if (!$uploadPayslipError && !empty($rows)) {
-                $deduped = [];
-                foreach ($rows as $row) {
-                    $deduped[$row['employee_id'] . '_' . $row['payroll_date']] = $row;
-                }
-                $rows = array_values($deduped);
-
-                $payload = json_encode($rows, JSON_UNESCAPED_UNICODE);
-
-                $ch = curl_init();
-                curl_setopt($ch, CURLOPT_URL, "$projectUrl/rest/v1/$table");
-                curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                    "apikey: $apiKey",
-                    "Authorization: Bearer $apiKey",
-                    "Content-Type: application/json",
-                    "Prefer: resolution=merge-duplicates"
-                ]);
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                $response = curl_exec($ch);
-                $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                curl_close($ch);
-
-                if ($httpcode == 201) {
-                    $uploadSuccess = true;
-                    logActivity("Upload Payslip", "Uploaded payslip CSV with " . count($rows) . " records.");
-                } else {
-                    $uploadPayslipError = "Error uploading payslips — please check your CSV data.";
-                }
-            }
-        } else {
-            fclose($csv_file);
-        }
-    } else {
-        $uploadPayslipError = "No file uploaded — please select a CSV file.";
+    if ($httpCode !== 201 && $httpCode !== 200) {
+        echo "<pre>Failed to insert payment (HTTP $httpCode): $response</pre>";
+        exit();
     }
+
+    // Compute total paid for this loan
+    $ch = curl_init("$projectUrl/rest/v1/loan_payments?loan_id=eq.$loan_id&select=payment_amount");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "apikey: $apiKey",
+            "Authorization: Bearer $apiKey",
+            "Content-Type: application/json"
+        ]
+    ]);
+    $paymentsResponse = curl_exec($ch);
+    curl_close($ch);
+    $payments = json_decode($paymentsResponse, true);
+    $totalPaid = array_sum(array_column($payments, 'payment_amount')); // Correctly sums the paid amounts
+
+    // Fetch loan details
+    $ch = curl_init("$projectUrl/rest/v1/loans?id=eq.$loan_id&select=id,loan_amount,balance,status");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "apikey: $apiKey",
+            "Authorization: Bearer $apiKey",
+            "Content-Type: application/json"
+        ]
+    ]);
+    $loanResponse = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode !== 200) {
+        echo "<pre> Failed to fetch loan (HTTP $httpCode): $loanResponse</pre>";
+        exit();
+    }
+
+    $loanData = json_decode($loanResponse, true);
+    if (empty($loanData)) {
+        echo "<pre> Loan not found for ID $loan_id</pre>";
+        exit();
+    }
+    $loan = $loanData[0];
+
+    // Compute new balance & status
+    $new_balance = max(0, ((float)$loan['loan_amount']) - $totalPaid);
+    $new_status = $new_balance <= 0 ? 'paid' : 'active';
+
+    // Update the loan record with new balance and status
+    $updateData = json_encode(['balance' => $new_balance, 'status' => $new_status]);
+    $ch = curl_init("$projectUrl/rest/v1/loans?id=eq.$loan_id");
+    curl_setopt_array($ch, [
+        CURLOPT_CUSTOMREQUEST => "PATCH",
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "apikey: $apiKey",
+            "Authorization: Bearer $apiKey",
+            "Content-Type: application/json",
+            "Prefer: return=representation"
+        ],
+        CURLOPT_POSTFIELDS => $updateData
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode !== 200 && $httpCode !== 204) {
+        echo "<pre> Failed to update balance (HTTP $httpCode): $response</pre>";
+        exit();
+    }
+
+    logActivity("Payment Recorded", "₱$payment_amount recorded for employee $employee_id (Loan ID: $loan_id)");
+    header("Location: admin_loan.php?payment=success");
+    exit();
 }
 
-// Existing fetch employees logic
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, "$projectUrl/rest/v1/$table?select=employee_id,name,position,net_pay,payroll_date");
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "apikey: $apiKey",
-    "Authorization: Bearer $apiKey",
-]);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-$response = curl_exec($ch);
-curl_close($ch);
-$employees = json_decode($response, true);
 
-// Fetch Employee Credentials Data
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, "$projectUrl/rest/v1/employees_credentials?select=employee_id,complete_name,subsidiary,position,email,status");
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "apikey: $apiKey",
-    "Authorization: Bearer $apiKey",
-]);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-$response = curl_exec($ch);
-curl_close($ch);
-$employee_credentials = json_decode($response, true);
+// --- Fetch all loans for display ---
+$loans = getLoans();
+$subsidiaryFilter = $_GET['subsidiary'] ?? '';
+if ($subsidiaryFilter !== '') {
+    $loans = array_filter($loans, fn($l) => $l['subsidiary'] === $subsidiaryFilter);
+}
 
+$activeLoansData = array_filter($loans, fn($l) => $l['status'] === 'active');
+$totalLoanAmount = array_sum(array_column($activeLoansData, 'loan_amount'));
 
+// Fetch actual total paid from loan_payments
+$totalAmountPaid = 0;
+foreach ($activeLoansData as $loan) {
+    $loanId = $loan['id'];
+    $ch = curl_init("$projectUrl/rest/v1/loan_payments?loan_id=eq.$loanId&select=payment_amount");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            "apikey: $apiKey",
+            "Authorization: Bearer $apiKey",
+            "Content-Type: application/json"
+        ]
+    ]);
+    $res = curl_exec($ch);
+    curl_close($ch);
+    $payments = json_decode($res, true);
+    $loanPaid = array_sum(array_column($payments, 'payment_amount'));
+    $totalAmountPaid += $loanPaid;
+}
+
+$activeLoans  = count($activeLoansData);
 
 $current_page = basename($_SERVER['PHP_SELF']);
-
 function navButtonClass($page, $current_page) {
-    if ($page === $current_page) {
-        // Active button: highlighted background
-        return "bg-gray-800 text-white font-semibold";
-    } else {
-        // Inactive button: plain, no hover
-        return "bg-transparent text-white";
-    }
+    return $page === $current_page ? "bg-gray-800 text-white font-semibold" : "bg-transparent text-white";
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Payslip Management</title>
-   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
-  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css" />
-  <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Track Loans</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<style>
+#loanTable td { position: relative; z-index: 1; }
+#loanTable button { position: relative; z-index: 5; margin-right: 4px; }
+#loanTable tbody tr:hover { background-color: #f9fafb; z-index: 0; }
+@media (max-width: 640px) {
+  #loanTable td button { display: block; width: 100%; margin-bottom: 4px; }
+}
+
+@media (max-width: 640px) {
+  #loanTable td button {
+    padding: 0.5rem;
+    margin: 0;
+  }
+  #loanTable td {
+    text-align: center;
+  }
+}
+.dt-buttons {
+  margin-bottom: 1rem;
+}
+.dt-button {
+  border: none !important;
+  font-weight: 500;
+  transition: background-color 0.2s ease-in-out;
+}
+</style>
 </head>
 <body class="bg-gray-100 font-sans">
-
 <?php if (!empty($SHOW_RESTRICT_OVERLAY)): ?>
 <div class="rbac-overlay">
   <div class="rbac-card">
-    <h2><strong>Access Restricted</strong></h2>
-    <p>The Finance role only has access to Loan Management.</p>
+    <h2>Access Restricted</h2>
+    <p>The Finance role only has access to <strong>Loan Management</strong>.</p>
     <a class="rbac-button" href="admin_loan.php">Go to Loan Management</a>
   </div>
 </div>
@@ -386,21 +368,18 @@ document.addEventListener('click', e => {
 }, true);
 </script>
 <?php endif; ?>
-
-
-
-<div class="flex h-screen">
-  <!-- Sidebar -->
-  <div id="sidebar" class="w-64 bg-black text-white flex flex-col transition-all duration-300 ease-in-out">
-      <div class="p-6 border-b border-gray-700 flex items-center justify-between">
-          <h1 id="sidebarTitle" class="text-xl font-bold">Payslip & Loan Portal</h1>
-         <button onclick="toggleSidebar()" class="p-2 hover:bg-gray-800 rounded-lg transition-colors">
-  <svg id="toggleIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
-  </svg>
-</button>
-      </div>
-<nav class="flex-1 p-4 space-y-2">
+<div class="flex h-screen overflow-hidden">
+<!-- Sidebar -->
+<div id="sidebar" class="w-64 bg-black text-white flex flex-col transition-all duration-300 ease-in-out">
+  <div class="p-6 border-b border-gray-700 flex items-center justify-between">
+    <h1 id="sidebarTitle" class="text-xl font-bold">Payslip & Loan Portal</h1>
+    <button onclick="toggleSidebar()" class="p-2 hover:bg-gray-800 rounded-lg transition-colors">
+      <svg id="toggleIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
+      </svg>
+    </button>
+  </div>
+  <nav class="flex-1 p-4 space-y-2">
   <?php
   function navButton($href, $icon, $label, $page, $ROLE, $ALLOWED, $current_page) {
       $disabled = ($ROLE === 'finance' && !in_array($page, $ALLOWED));
@@ -418,7 +397,7 @@ document.addEventListener('click', e => {
   }
 
   // Define what Finance can access
-  $FINANCE_ALLOWED = ['admin_loan.php'];
+  $FINANCE_ALLOWED = ['admin_loan.php', 'activity_logs.php'];
 
   // Render buttons
   navButton('admindashboard.php', 'bi-people', 'Payslip Management', 'admindashboard.php', $ROLE, $FINANCE_ALLOWED, $current_page);
@@ -427,543 +406,291 @@ document.addEventListener('click', e => {
   ?>
 </nav>
 
-      <div class="p-4 border-t border-gray-700">
-          <a href="logout.php" class="w-full block px-4 py-3 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center space-x-3">
-              <i class="bi bi-box-arrow-right"></i>
-              <span class="nav-text">Log Out</span>
-          </a>
-      </div>
+  <div class="p-4 border-t border-gray-700">
+    <a href="logout.php" class="w-full block px-4 py-3 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center space-x-3">
+      <i class="bi bi-box-arrow-right"></i><span class="nav-text">Log Out</span>
+    </a>
   </div>
+</div>
 
   <!-- Main -->
   <div class="flex-1 flex flex-col">
     <header class="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center">
       <span class="text-sm text-gray-600">Welcome, <?= htmlspecialchars($_SESSION['complete_name']) ?></span>
     </header>
+    
+<!-- Main -->
+<main id="mainContent" class="flex-1 p-6 overflow-y-auto transition-all duration-300">
+  <div class="max-w-7xl mx-auto bg-white rounded-lg shadow p-6">
+    <h2 class="text-2xl font-semibold mb-6">Loan Overview</h2>
 
-   <main class="flex-1 p-6 overflow-y-auto">
-  <div class="max-w-6xl mx-auto bg-white rounded-lg shadow p-6">
-
-    <!-- ✅ Bootstrap-Like Tabs -->
-    <ul class="flex border-b border-gray-200 mb-4" id="dashboardTabs">
-      <li class="mr-1">
-        <button id="tabPayslip" onclick="showTab('payslip')" 
-          class="inline-block bg-blue-600 hover:bg-blue-200 text-white font-semibold py-2 px-4 rounded-t">
-          Payslip Management
-        </button>
-      </li>
-      <li class="mr-1">
-        <button id="tabEmployees" onclick="showTab('employees')" 
-          class="inline-block bg-gray-100 hover:bg-blue-200 text-gray-700 font-semibold py-2 px-4 rounded-t">
-          Employee Credentials
-        </button>
-      </li>
-    </ul>
-
-    <!-- Payslip Management Table -->
-<div id="payslipTab" class="tab-content">
-  <div class="flex justify-between items-center mb-6">
-    <!--Payroll Filter -->
-    <div class="flex items-center space-x-2">
-      <label for="payrollFilter" class="text-gray-700 font-medium">Filter by Payroll Date:</label>
-      <input type="date" id="payrollFilter" class="border border-gray-300 rounded-md p-2" />
-      <button id="clearFilter" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-2 rounded-md">Clear</button>
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div class="border shadow-lg p-4 rounded-lg"><p class="text-sm">Total Loan Amount</p><p class="text-2xl font-bold">₱<?= number_format($totalLoanAmount, 2) ?></p></div>
+      <div class="border shadow-lg p-4 rounded-lg"><p class="text-sm">Total Amount Paid</p><p class="text-2xl font-bold">₱<?= number_format($totalAmountPaid, 2) ?></p></div>
+      <div class="border shadow-lg p-4 rounded-lg"><p class="text-sm">Balance</p><p class="text-2xl font-bold">₱<?= number_format($totalLoanAmount - $totalAmountPaid, 2) ?></p></div>
+      <div class="border shadow-lg p-4 rounded-lg"><p class="text-sm">Active Loans</p><p class="text-2xl font-bold"><?= $activeLoans ?></p></div>
     </div>
 
-    <!-- Upload Button -->
-    <button onclick="openUploadModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2">
-      <span>Upload Payslip</span>
+<div class="overflow-x-auto mt-4">
+  <div class="flex justify-between items-center mb-4">
+    <h3 class="text-lg font-semibold">Loan Records</h3>
+    <button onclick="exportToExcel()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">
+      <i class="bi bi-download me-2"></i> Export Loans
     </button>
   </div>
 
-      <table id="employeeTable" class="display min-w-full border border-gray-200 mt-6">
-        <thead class="bg-black text-white">
-          <tr>
-            <th>Payroll Date</th>
-            <th>Employee ID</th>
-            <th>Employee Name</th>
-            <th>Position</th>
-            <th>Net Pay</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php if (!empty($employees)): ?>
-            <?php foreach ($employees as $emp): ?>
-              <tr>
-                <td><?= htmlspecialchars($emp['payroll_date'] ?? '-') ?></td>
-                <td><?= htmlspecialchars($emp['employee_id'] ?? '-') ?></td>
-                <td><?= htmlspecialchars($emp['name'] ?? '-') ?></td>
-                <td><?= htmlspecialchars($emp['position'] ?? '-') ?></td>
-                <td>₱<?= htmlspecialchars($emp['net_pay'] ?? '0.00') ?></td>
-              </tr>
-            <?php endforeach; ?>
-          <?php endif; ?>
-        </tbody>
-      </table>
-    </div>
+  <table class="min-w-full border border-gray-200 text-sm rounded-lg overflow-hidden shadow-sm">
+    <thead class="bg-black text-white text-center">
+      <tr>
+        <th class="p-3 cursor-pointer" onclick="sortTable(0)">Name</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(1)">Employee ID</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(2)">Subsidiary</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(3)">Loan Type</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(4)">Loan Amount</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(5)">Terms</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(6)">Payment per Cutoff</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(7)">Balance</th>
+        <th class="p-3 cursor-pointer" onclick="sortTable(8)">Status</th>
+        <th class="p-3">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="bg-white text-center divide-y divide-gray-200">
+      <?php if (!empty($loans)): foreach ($loans as $loan): ?>
+        <tr class="hover:bg-gray-50 transition-colors">
+          <td class="p-3"><?= htmlspecialchars($loan['name']) ?></td>
+          <td class="p-3"><?= htmlspecialchars($loan['employee_id']) ?></td>
+          <td class="p-3"><?= htmlspecialchars($loan['subsidiary']) ?></td>
+          <td class="p-3"><?= htmlspecialchars($loan['loan_type']) ?></td>
+          <td class="p-3"><?= number_format($loan['loan_amount'], 2) ?></td>
+          <td class="p-3"><?= htmlspecialchars($loan['payment_terms']) ?></td>
+          <td class="p-3 text-gray-700"><?= number_format($loan['payment_amount'], 2) ?></td>
+          <td class="p-3 text-gray-700"><?= number_format($loan['balance'] ?? 0, 2) ?></td>
+          <td class="p-3">
+            <span class="px-3 py-1 rounded-full text-white text-xs 
+              <?= $loan['status']==='active'?'bg-blue-600':
+                ($loan['status']==='paid'?'bg-green-600':'bg-yellow-500 text-black') ?>">
+              <?= ucfirst($loan['status']) ?>
+            </span>
+          </td>
+          <td class="p-3 flex justify-center gap-2">
+            <button title="Edit Loan" 
+              class="edit-btn bg-red-500 hover:bg-red-600 text-white p-2 rounded transition"
+              data-loan='<?= json_encode($loan) ?>'>
+              <i class="bi bi-pencil-square"></i>
+            </button>
+            <button title="Add Payment" 
+              class="payment-btn bg-green-600 hover:bg-green-700 text-white p-2 rounded transition"
+              data-loan='<?= json_encode($loan) ?>'>
+              <i class="bi bi-cash-stack"></i>
+            </button>
+            <button title="View History" 
+              class="history-btn bg-gray-700 hover:bg-gray-800 text-white p-2 rounded transition"
+              data-loan-id="<?= $loan['id'] ?>">
+              <i class="bi bi-clock-history"></i>
+            </button>
+          </td>
+        </tr>
+      <?php endforeach; else: ?>
+        <tr><td colspan="10" class="text-gray-500 py-6">No loan records found.</td></tr>
+      <?php endif; ?>
+    </tbody>
+  </table>
+</div>
 
-    <!-- Employee Credentials Table -->
-    <div id="employeesTab" class="tab-content hidden">
-  <div class="flex justify-end mb-6">
-    <button onclick="openEmployeeUploadModal()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2">
-      <span>Upload Employees</span>
-    </button>
-  </div>
-  <table id="employeeCredentialsTable" class="display min-w-full border border-gray-200 mt-6">
-        <thead class="bg-black text-white">
-          <tr>
-            <th>Employee ID</th>
-            <th>Complete Name</th>
-            <th>Subsidiary</th>
-            <th>Position</th>
-            <th>Email</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php if (!empty($employee_credentials)): ?>
-            <?php foreach ($employee_credentials as $emp): ?>
-              <tr>
-                <td><?= htmlspecialchars($emp['employee_id'] ?? '-') ?></td>
-                <td><?= htmlspecialchars($emp['complete_name'] ?? '-') ?></td>
-                <td><?= htmlspecialchars($emp['subsidiary'] ?? '-') ?></td>
-                <td><?= htmlspecialchars($emp['position'] ?? '-') ?></td>
-                <td><?= htmlspecialchars($emp['email'] ?? '-') ?></td>
-                <td><?= htmlspecialchars($emp['status'] ?? '-') ?></td>
-                <td class="text-center">
-                <div class="flex justify-center items-center space-x-2">
-                  <button onclick='viewEmployeeDetails(<?= json_encode($emp) ?>)' 
-                    class="flex items-center gap-1 bg-gray-200 hover:bg-gray-300 text-black px-2 py-1 rounded-md text-sm">
-                    <i class="bi bi-eye"></i> View
-                  </button>
-                  <button onclick='openEditEmployeeModal(<?= json_encode($emp) ?>)' 
-                    class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded-md text-sm">
-                    <i class="bi bi-pencil-square"></i> Edit
-                  </button>
-                </div>
-              </td>
-              </tr>
-            <?php endforeach; ?>
-          <?php endif; ?>
-        </tbody>
-      </table>
-    </div>
   </div>
 </main>
+</div>
 
-  <?php if ($uploadSuccess): ?>
-<div id="successModal" class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm text-center">
-    <i class="bi bi-check-circle text-green-600 text-4xl mb-3"></i>
-    <h3 class="text-lg font-semibold mb-2">Upload Successful</h3>
-    <p class="text-gray-600 mb-4">Payslip data has been successfully uploaded.</p>
-    <button onclick="closeSuccessModal()" class="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800">OK</button>
+<!-- Edit Modal -->
+<div id="editModal" class="fixed inset-0 hidden bg-black bg-opacity-40 z-50 flex items-center justify-center">
+  <div class="bg-white p-6 rounded-lg shadow-lg max-w-lg w-full mx-4">
+    <h3 class="text-xl font-bold mb-4">Update Loan</h3>
+    <form method="POST">
+      <input type="hidden" name="action" value="update_loan">
+      <input type="hidden" name="loan_id" id="edit_loan_id">
+      <input type="hidden" name="employee_id" id="edit_employee_id">
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-sm">Loan Type</label><input type="text" id="edit_loan_type" name="loan_type" class="w-full border rounded p-2"></div>
+        <div><label class="text-sm">Loan Amount</label><input type="number" step="0.01" id="edit_loan_amount" name="loan_amount" class="w-full border rounded p-2"></div>
+        <div><label class="text-sm">Payment Terms</label><input type="text" id="edit_payment_terms" name="payment_terms" class="w-full border rounded p-2"></div>
+        <div><label class="text-sm">Payment per Cutoff</label><input type="number" step="0.01" id="edit_payment_amount" name="payment_amount" class="w-full border rounded p-2"></div>
+        <div><label class="text-sm">Start Date</label><input type="date" id="edit_start_date" name="start_date" class="w-full border rounded p-2"></div>
+        <div><label class="text-sm">End Date</label><input type="date" id="edit_end_date" name="end_date" class="w-full border rounded p-2"></div>
+        <div class="col-span-2"><label class="text-sm">Purpose</label><textarea id="edit_purpose" name="purpose" class="w-full border rounded p-2"></textarea></div>
+        <div class="col-span-2"><label class="text-sm">Status</label>
+          <select id="edit_status" name="status" class="w-full border rounded p-2">
+            <option value="pending">Pending</option>
+            <option value="active">Active</option>
+            <option value="paid">Paid</option>
+          </select>
+        </div>
+        <div class="col-span-2">
+  <label class="text-sm">Release Date</label>
+  <input type="date" id="edit_release_date" name="release_date" class="w-full border rounded p-2">
+</div>
+
+<div class="col-span-2">
+  <label class="text-sm">Release Notes</label>
+  <textarea id="edit_release_notes" name="release_notes" class="w-full border rounded p-2"></textarea>
+</div>
+
+      </div>
+      <div class="flex justify-end mt-4 space-x-2">
+        <button type="button" id="cancelEdit" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">Cancel</button>
+        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Save</button>
+      </div>
+    </form>
   </div>
 </div>
-<?php endif; ?>
 
-<?php if (isset($uploadPayslipError) && $uploadPayslipError): ?>
-<div id="payslipUploadErrorModal" class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm text-center">
-    <i class="bi bi-exclamation-triangle text-yellow-500 text-4xl mb-3"></i>
-    <h3 class="text-lg font-semibold mb-2 text-gray-800">Invalid Upload</h3>
-    <p class="text-gray-600 mb-4"><?= htmlspecialchars($uploadPayslipError) ?></p>
-    <button onclick="closePayslipUploadErrorModal()" class="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800">OK</button>
+<!-- Payment Modal -->
+<div id="paymentModal" class="fixed inset-0 hidden bg-black bg-opacity-40 z-50 flex items-center justify-center">
+  <div class="bg-white p-6 rounded-lg shadow-lg max-w-lg w-full mx-4">
+    <h3 class="text-xl font-bold mb-4">Record Payment</h3>
+    <form method="POST">
+      <input type="hidden" name="action" value="add_payment">
+      <input type="hidden" name="loan_id" id="payment_loan_id">
+      <input type="hidden" name="employee_id" id="payment_employee_id">
+      <div class="mb-3"><label class="text-sm">Payment Amount</label><input type="number" step="0.01" name="payment_amount" class="w-full border rounded p-2" required></div>
+      <div class="mb-3"><label class="text-sm">Payment Date</label><input type="date" name="payment_date" class="w-full border rounded p-2" required></div>
+      <div class="mb-3"><label class="text-sm">Notes</label><textarea name="notes" class="w-full border rounded p-2"></textarea></div>
+      <div class="flex justify-end space-x-2">
+        <button type="button" id="cancelPayment" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">Cancel</button>
+        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Save</button>
+      </div>
+    </form>
   </div>
 </div>
-<?php endif; ?>
 
-  <!-- NEW Employee Upload Success Modal -->
-  <?php if (isset($uploadEmployeeSuccess) && $uploadEmployeeSuccess): ?>
-  <div id="employeeUploadSuccessModal" class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm text-center">
-      <i class="bi bi-check-circle text-green-600 text-4xl mb-3"></i>
-      <h3 class="text-lg font-semibold mb-2">Upload Successful</h3>
-      <p class="text-gray-600 mb-4">Employee list has been uploaded successfully.</p>
-      <button onclick="closeEmployeeUploadSuccessModal()" class="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800">OK</button>
+<!-- History Modal -->
+<div id="historyModal" class="fixed inset-0 hidden bg-black bg-opacity-40 z-50 flex items-center justify-center">
+  <div class="bg-white p-6 rounded-lg shadow-lg max-w-lg w-full mx-4">
+    <h3 class="text-xl font-bold mb-4">Payment History</h3>
+    <div class="overflow-x-auto">
+      <table class="w-full border">
+        <thead class="bg-gray-800 text-white">
+          <tr><th class="p-2">Date</th><th class="p-2">Amount</th><th class="p-2">Notes</th></tr>
+        </thead>
+        <tbody id="historyTableBody" class="text-center"></tbody>
+      </table>
     </div>
-  </div>
-  <?php endif; ?>
-
-<?php if (isset($uploadEmployeeError) && $uploadEmployeeError): ?>
-<div id="employeeUploadErrorModal" class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm text-center">
-    <i class="bi bi-exclamation-triangle text-yellow-500 text-4xl mb-3"></i>
-    <h3 class="text-lg font-semibold mb-2 text-gray-800">Invalid Upload</h3>
-    <p class="text-gray-600 mb-4"><?= htmlspecialchars($uploadEmployeeError) ?></p>
-    <button onclick="closeEmployeeUploadErrorModal()" class="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800">
-      OK
-    </button>
-  </div>
-</div>
-<?php endif; ?>
-
-
-<!-- Upload CSV Modal -->
-<div id="uploadModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-    <h3 class="text-lg font-semibold mb-4 text-gray-800">Upload Payslip</h3>
-    <form method="post" enctype="multipart/form-data" id="csvUploadModalForm" onsubmit="showUploadSpinner()" class="flex flex-col gap-4">
-      <input type="file" name="csv_file" accept=".csv" required class="border border-gray-300 rounded-md p-2" />
-      <div class="flex justify-end gap-3">
-        <button type="button" onclick="closeUploadModal()" class="bg-gray-300 hover:bg-gray-400 text-black px-4 py-2 rounded-lg">Cancel</button>
-        <button type="submit" name="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2">
-          <span>Upload</span>
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
-  </div>
-</div>
-<!-- Add Employee Success Modal -->
-<?php if (isset($_GET['added']) && $_GET['added'] === 'success'): ?>
-<div id="employeeAddedModal" class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm text-center">
-    <i class="bi bi-check-circle text-green-600 text-4xl mb-3"></i>
-    <h3 class="text-lg font-semibold mb-2">Employee Added</h3>
-    <p class="text-gray-600 mb-4">The new employee has been added successfully.</p>
-    <button onclick="closeEmployeeModal()" class="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800">OK</button>
-  </div>
-</div>
-<?php endif; ?>
-<!-- Upload Employee CSV Modal -->
-<div id="employeeUploadModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-    <h3 class="text-lg font-semibold mb-4 text-gray-800">Upload Employee List</h3>
-    <form method="post" enctype="multipart/form-data" onsubmit="showUploadSpinner()" class="flex flex-col gap-4">
-      <input type="file" name="employee_csv" accept=".csv" required class="border border-gray-300 rounded-md p-2" />
-      <div class="flex justify-end gap-3">
-        <button type="button" onclick="closeEmployeeUploadModal()" class="bg-gray-300 hover:bg-gray-400 text-black px-4 py-2 rounded-lg">Cancel</button>
-        <button type="submit" name="upload_employee_csv" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2">
-          <span>Upload</span>
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!---View Employee Data Modal --->
-<div id="viewEmployeeModal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
-    <h3 class="text-lg font-semibold mb-4">View Employee Details</h3>
-    <div id="employeeViewContent" class="text-gray-700 space-y-2"></div>
     <div class="flex justify-end mt-4">
-      <button onclick="closeViewModal()" class="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800">Close</button>
+      <button id="closeHistory" class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded">Close</button>
     </div>
   </div>
 </div>
-
-<!---Edit Employee Data Modal --->
-<div id="editEmployeeModal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg shadow-lg w-full max-w-lg p-6">
-    <h3 class="text-lg font-semibold mb-4">Edit Employee</h3>
-    <form id="editEmployeeForm" method="post" class="space-y-4">
-      <input type="hidden" id="edit_employee_id" name="employee_id">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Complete Name</label>
-        <input type="text" id="edit_complete_name" name="complete_name" class="border border-gray-300 rounded-md w-full p-2">
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-        <input type="email" id="edit_email" name="email" class="border border-gray-300 rounded-md w-full p-2">
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Position</label>
-        <input type="text" id="edit_position" name="position" class="border border-gray-300 rounded-md w-full p-2">
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Subsidiary</label>
-        <input type="text" id="edit_subsidiary" name="subsidiary" class="border border-gray-300 rounded-md w-full p-2">
-      </div>
-      <div>
-  <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-  <select id="edit_status" name="status" class="border border-gray-300 rounded-md w-full p-2 bg-white">
-    <option value="active">Active</option>
-    <option value="inactive">Inactive</option>
-  </select>
-</div>
-      <div class="flex justify-end space-x-3">
-        <button type="button" onclick="closeEditModal()" class="bg-gray-300 px-4 py-2 rounded-lg hover:bg-gray-400">Cancel</button>
-        <button type="button" onclick="saveEmployeeChanges()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">Save</button>
-      </div>
-    </form>
-  </div>
-</div>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
+// Modal handling
+$(document).on('click', '.edit-btn', function() {
+  const loan = JSON.parse($(this).attr('data-loan'));
+  $('#editModal').removeClass('hidden').addClass('flex');
+  $('#edit_loan_id').val(loan.id);
+  $('#edit_employee_id').val(loan.employee_id);
+  $('#edit_loan_type').val(loan.loan_type || '');
+  $('#edit_loan_amount').val(loan.loan_amount || '');
+  $('#edit_payment_terms').val(loan.payment_terms || '');
+  $('#edit_payment_amount').val(loan.payment_amount || '');
+  $('#edit_start_date').val(loan.start_date || '');
+  $('#edit_end_date').val(loan.end_date || '');
+  $('#edit_purpose').val(loan.purpose || '');
+  $('#edit_status').val(loan.status || 'pending');
+  $('#edit_release_date').val(loan.release_date || '');
+  $('#edit_release_notes').val(loan.release_notes || '');
 
-  // ========== VIEW ==========
-function viewEmployeeDetails(emp) {
-  const container = document.getElementById('employeeViewContent');
-  container.innerHTML = `
-    <p><strong>Employee ID:</strong> ${emp.employee_id}</p>
-    <p><strong>Name:</strong> ${emp.complete_name}</p>
-    <p><strong>Subsidiary:</strong> ${emp.subsidiary}</p>
-    <p><strong>Position:</strong> ${emp.position}</p>
-    <p><strong>Email:</strong> ${emp.email}</p>
-    <p><strong>Status:</strong> ${emp.status}</p>
-  `;
-  document.getElementById('viewEmployeeModal').classList.remove('hidden');
-}
+});
+$('#cancelEdit').on('click', () => $('#editModal').addClass('hidden').removeClass('flex'));
 
-function closeViewModal() {
-  document.getElementById('viewEmployeeModal').classList.add('hidden');
-}
+$(document).on('click', '.payment-btn', function() {
+  const loan = JSON.parse($(this).attr('data-loan'));
+  $('#paymentModal').removeClass('hidden').addClass('flex');
+  $('#payment_loan_id').val(loan.id);
+  $('#payment_employee_id').val(loan.employee_id);
+});
+$('#cancelPayment').on('click', () => $('#paymentModal').addClass('hidden').removeClass('flex'));
 
-// ========== EDIT ==========
-function openEditEmployeeModal(emp) {
-  document.getElementById('edit_employee_id').value = emp.employee_id;
-  document.getElementById('edit_complete_name').value = emp.complete_name;
-  document.getElementById('edit_email').value = emp.email;
-  document.getElementById('edit_position').value = emp.position;
-  document.getElementById('edit_subsidiary').value = emp.subsidiary;
-  document.getElementById('edit_status').value = emp.status || 'active';
-  document.getElementById('editEmployeeModal').classList.remove('hidden');
-}
-
-function closeEditModal() {
-  document.getElementById('editEmployeeModal').classList.add('hidden');
-}
-
-// ========== SAVE CHANGES ==========
-function saveEmployeeChanges() {
-  const employee_id = document.getElementById('edit_employee_id').value;
-  const data = {
-    complete_name: document.getElementById('edit_complete_name').value,
-    email: document.getElementById('edit_email').value,
-    position: document.getElementById('edit_position').value,
-    subsidiary: document.getElementById('edit_subsidiary').value,
-    status: document.getElementById('edit_status').value
-  };
-
-  fetch(`${"<?= $projectUrl ?>"}/rest/v1/employees_credentials?employee_id=eq.${employee_id}`, {
-    method: 'PATCH',
-    headers: {
-      'apikey': "<?= $apiKey ?>",
-      'Authorization': `Bearer <?= $apiKey ?>`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=minimal'
-    },
-    body: JSON.stringify(data)
-  })
-  .then(res => {
-    if (res.ok) {
-      document.getElementById('editEmployeeModal').classList.add('hidden');
-      document.getElementById('employeeUpdateSuccessModal').classList.remove('hidden');
-    } else {
-      document.getElementById('employeeUpdateErrorModal').classList.remove('hidden');
-    }
-  })
-  .catch(() => {
-    document.getElementById('employeeUpdateErrorModal').classList.remove('hidden');
+$(document).on('click', '.history-btn', async function() {
+  const loanId = $(this).data('loan-id');
+  const apiKey = "<?= $_ENV['SUPABASE_KEY'] ?>";
+  const projectUrl = "<?= $_ENV['SUPABASE_URL'] ?>";
+  const res = await fetch(`${projectUrl}/rest/v1/loan_payments?loan_id=eq.${loanId}&select=*`, {
+    headers: { apikey: apiKey, Authorization: `Bearer ${apiKey}` }
   });
-}
+  const data = await res.json();
+  let rows = data.length ? data.map(p =>
+    `<tr><td>${p.payment_date}</td><td>₱${parseFloat(p.payment_amount).toFixed(2)}</td><td>${p.notes || ''}</td></tr>`
+  ).join('') : '<tr><td colspan="3" class="text-center py-2 text-gray-500">No payment history found</td></tr>';
+  $('#historyTableBody').html(rows);
+  $('#historyModal').removeClass('hidden').addClass('flex');
+});
+$('#closeHistory').on('click', () => $('#historyModal').addClass('hidden').removeClass('flex'));
 
-  function openUploadModal() {
-  document.getElementById('uploadModal').classList.remove('hidden');
-}
-
-function closeUploadModal() {
-  document.getElementById('uploadModal').classList.add('hidden');
-}
-
-  function closeSuccessModal() {
-  const modal = document.getElementById('successModal');
-  if (modal) modal.classList.add('hidden');
-}
-
-function openEmployeeUploadModal() {
-  document.getElementById('employeeUploadModal').classList.remove('hidden');
-}
-
-function closeEmployeeUploadModal() {
-  document.getElementById('employeeUploadModal').classList.add('hidden');
-}
-
-function closeEmployeeUploadSuccessModal() {
-  const modal = document.getElementById('employeeUploadSuccessModal');
-  if (modal) modal.classList.add('hidden');
-
-  // Also hide any background overlays
-  const spinner = document.getElementById('uploadSpinner');
-  if (spinner) spinner.classList.add('hidden');
-
-  const uploadModal = document.getElementById('employeeUploadModal');
-  if (uploadModal) uploadModal.classList.add('hidden');
-
-  // Optional: reload page to refresh table
-  window.location.href = window.location.pathname; 
-}
-
-function closeEmployeeUploadErrorModal() {
-  const modal = document.getElementById('employeeUploadErrorModal');
-  if (modal) modal.classList.add('hidden');
-  const uploadModal = document.getElementById('employeeUploadModal');
-  if (uploadModal) uploadModal.classList.add('hidden');
-}
-
-function closePayslipUploadErrorModal() {
-  const modal = document.getElementById('payslipUploadErrorModal');
-  if (modal) modal.classList.add('hidden');
-
-  const uploadModal = document.getElementById('uploadModal');
-  if (uploadModal) uploadModal.classList.add('hidden');
-
-  // Optional refresh
-  window.location.href = window.location.pathname;
-}
-
-  function toggleSidebar() {
+function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
   const sidebarTitle = document.getElementById('sidebarTitle');
   const toggleIcon = document.getElementById('toggleIcon');
   const navTexts = document.querySelectorAll('.nav-text');
   const navButtons = document.querySelectorAll('nav button, nav a');
-
   if (sidebar.classList.contains('w-64')) {
-    // Collapse
-    sidebar.classList.remove('w-64');
-    sidebar.classList.add('w-16');
+    sidebar.classList.replace('w-64', 'w-16');
     sidebarTitle.style.display = 'none';
     navTexts.forEach(t => t.style.display = 'none');
-    navButtons.forEach(b => {
-      b.classList.add('justify-center');
-      b.classList.remove('space-x-3');
-    });
-    toggleIcon.innerHTML =
-      '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>';
+    navButtons.forEach(b => { b.classList.add('justify-center'); b.classList.remove('space-x-3'); });
+    toggleIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>';
   } else {
-    // Expand
-    sidebar.classList.remove('w-16');
-    sidebar.classList.add('w-64');
+    sidebar.classList.replace('w-16', 'w-64');
     sidebarTitle.style.display = 'block';
     navTexts.forEach(t => t.style.display = 'block');
-    navButtons.forEach(b => {
-      b.classList.remove('justify-center');
-      b.classList.add('space-x-3');
-    });
-    toggleIcon.innerHTML =
-      '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>';
+    navButtons.forEach(b => { b.classList.remove('justify-center'); b.classList.add('space-x-3'); });
+    toggleIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>';
   }
 }
-  function showUploadSpinner() {
-  const spinner = document.getElementById('uploadSpinner');
-  if (spinner) spinner.classList.remove('hidden');
+// Simple table sorting
+function sortTable(colIndex) {
+  const table = document.querySelector("table");
+  const tbody = table.querySelector("tbody");
+  const rows = Array.from(tbody.querySelectorAll("tr"));
+  const isAsc = table.getAttribute("data-sort-dir") !== "asc";
+  
+  rows.sort((a, b) => {
+    const A = a.children[colIndex].innerText.trim().toLowerCase();
+    const B = b.children[colIndex].innerText.trim().toLowerCase();
+    return isAsc ? A.localeCompare(B, 'en', {numeric: true}) : B.localeCompare(A, 'en', {numeric: true});
+  });
+  
+  tbody.innerHTML = "";
+  rows.forEach(r => tbody.appendChild(r));
+  table.setAttribute("data-sort-dir", isAsc ? "asc" : "desc");
+}
+// Export table to XLSX (Excel) — excludes "Actions" column
+function exportToExcel() {
+  const table = document.querySelector("table");
+  const wb = XLSX.utils.book_new();
+
+  // Clone table to avoid altering the DOM
+  const clone = table.cloneNode(true);
+
+  // Remove the last column (Actions) from header and body
+  clone.querySelectorAll("tr").forEach(row => {
+    if (row.lastElementChild) {
+      row.removeChild(row.lastElementChild);
+    }
+  });
+
+  // Convert cleaned table to Excel sheet
+  const ws = XLSX.utils.table_to_sheet(clone);
+
+  XLSX.utils.book_append_sheet(wb, ws, "Loans");
+  XLSX.writeFile(wb, "Loan_Records.xlsx");
 }
 
-function hideUploadSpinner() {
-  const spinner = document.getElementById('uploadSpinner');
-  if (spinner) spinner.classList.add('hidden');
-}
 
-function openAddModal() {
-  document.getElementById('employeeForm').reset();
-  document.getElementById('employeeModal').classList.remove('hidden');
-}
+$('#edit_status').on('change', function() {
+  const showReleaseFields = $(this).val() === 'active';
+  $('#edit_release_date').closest('div').toggle(showReleaseFields);
+  $('#edit_release_notes').closest('div').toggle(showReleaseFields);
+}).trigger('change');
 
-function closeModal() {
-  // Close Add Employee Modal (if open)
-  const employeeModal = document.getElementById('employeeModal');
-  if (employeeModal && !employeeModal.classList.contains('hidden')) {
-    employeeModal.classList.add('hidden');
-  }
-
-  // Close Upload Success Modal (if open)
-  const successModal = document.getElementById('successModal');
-  if (successModal && !successModal.classList.contains('hidden')) {
-    successModal.classList.add('hidden');
-  }
-}
-
-$(document).ready(function(){
-  var table=$('#employeeTable').DataTable({
-  pageLength:10,
-  lengthMenu:[5,10,25,50],
-  order:[[0,'asc']],
-  language:{search:"_INPUT_",searchPlaceholder:"Search employees"}});
-
-  $('#payrollFilter').on('change',function(){var d=this.value.trim();if(d){table.column(0).search(d,true,false).draw();}else{table.column(0).search('').draw();}});
-  $('#clearFilter').on('click',function(){$('#payrollFilter').val('');table.column(0).search('').draw();});
-
-  $('#employeeCredentialsTable').DataTable({
-  pageLength: 10,
-  lengthMenu: [5, 10, 25, 50],
-  order: [[0, 'asc']],
-  language: { search: "_INPUT_", searchPlaceholder: "Search employees" }
-});
-
-});
-
-
-function showTab(tab) {
-  const payslipTab = document.getElementById('payslipTab');
-  const employeesTab = document.getElementById('employeesTab');
-  const tabPayslip = document.getElementById('tabPayslip');
-  const tabEmployees = document.getElementById('tabEmployees');
-
-  if (tab === 'employees') {
-    payslipTab.classList.add('hidden');
-    employeesTab.classList.remove('hidden');
-
-    tabPayslip.classList.remove('bg-blue-600', 'text-white');
-    tabPayslip.classList.add('bg-gray-100', 'text-gray-700');
-    tabEmployees.classList.remove('bg-gray-100', 'text-gray-700');
-    tabEmployees.classList.add('bg-blue-600', 'text-white');
-  } else {
-    employeesTab.classList.add('hidden');
-    payslipTab.classList.remove('hidden');
-
-    tabEmployees.classList.remove('bg-blue-600', 'text-white');
-    tabEmployees.classList.add('bg-gray-100', 'text-gray-700');
-    tabPayslip.classList.remove('bg-gray-100', 'text-gray-700');
-    tabPayslip.classList.add('bg-blue-600', 'text-white');
-  }
-}
-
-function closeEmployeeUpdateSuccessModal() {
-  document.getElementById('employeeUpdateSuccessModal').classList.add('hidden');
-  window.location.reload();
-}
-
-function closeEmployeeUpdateErrorModal() {
-  document.getElementById('employeeUpdateErrorModal').classList.add('hidden');
-}
 </script>
-<!-- Uploading Spinner Overlay -->
-<div id="uploadSpinner" class="hidden fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-[9999]">
-  <div class="flex flex-col items-center text-center text-white">
-    <svg class="animate-spin h-10 w-10 text-white mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-    </svg>
-    <p class="text-lg font-semibold">Uploading CSV...</p>
-  </div>
-</div>
-
-<!-- Employee Update Success Modal -->
-<div id="employeeUpdateSuccessModal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm text-center">
-    <i class="bi bi-check-circle text-green-600 text-4xl mb-3"></i>
-    <h3 class="text-lg font-semibold mb-2 text-gray-800">Update Successful</h3>
-    <p class="text-gray-600 mb-4">Employee credentials have been updated successfully.</p>
-    <button onclick="closeEmployeeUpdateSuccessModal()" class="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800">
-      OK
-    </button>
-  </div>
-</div>
-
-<!-- Employee Update Error Modal -->
-<div id="employeeUpdateErrorModal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-50">
-  <div class="bg-white rounded-lg shadow-lg p-6 max-w-sm text-center">
-    <i class="bi bi-exclamation-triangle text-yellow-500 text-4xl mb-3"></i>
-    <h3 class="text-lg font-semibold mb-2 text-gray-800">Update Failed</h3>
-    <p class="text-gray-600 mb-4">An error occurred while updating employee credentials.</p>
-    <button onclick="closeEmployeeUpdateErrorModal()" class="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800">
-      OK
-    </button>
-  </div>
-</div>
-
 </body>
 </html>
