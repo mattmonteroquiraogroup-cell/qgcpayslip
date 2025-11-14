@@ -13,8 +13,8 @@ header("Pragma: no-cache");
 header("Expires: 0"); 
 
 
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
-$dotenv->load();
+//$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+//$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -681,3 +681,4 @@ window.addEventListener("pageshow", function (event) {
 </script>
 </body>
 </html>
+
