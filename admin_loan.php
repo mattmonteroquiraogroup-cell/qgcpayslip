@@ -3,19 +3,17 @@ session_start();
 require __DIR__ . '/vendor/autoload.php';
 use Dotenv\Dotenv;
 
+include 'role_guard.php';
+
 // Protect this page
 if (!isset($_SESSION['role'])) {
     header("Location: login.php");
     exit();
 }
-if ($_SESSION['role'] !== 'admin') {
-    header("Location: admindashboard.php");
-    exit();
-}
 
 // Load .env for Supabase
-//$dotenv = Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -51,7 +49,17 @@ function logActivity($action, $description) {
 // --- Fetch loans ---
 function getLoans() {
     global $projectUrl, $apiKey, $table;
-    $ch = curl_init("$projectUrl/rest/v1/$table?select=*");
+    $role = $_SESSION['role'] ?? 'guest';
+    
+    // Admin sees only active loans; Finance sees all
+    if ($role === 'admin') {
+        $url = "$projectUrl/rest/v1/$table?select=*&status=eq.active";
+    } else {
+        $url = "$projectUrl/rest/v1/$table?select=*";
+    }
+
+    $ch = curl_init($url);
+
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => [
@@ -106,6 +114,12 @@ if ($status === 'active' && (empty($loan['balance']) || $loan['balance'] == 0)) 
     $updateData["balance"] = (float)$loan_amount;
 }
 
+// release date and notes.
+$release_date = $_POST['release_date'] ?: null;
+$release_notes = $_POST['release_notes'] ?: null;
+
+$updateData["release_date"] = $release_date;
+$updateData["release_notes"] = $release_notes;
 
 
     $payload = json_encode($updateData);
@@ -278,7 +292,7 @@ foreach ($activeLoansData as $loan) {
     $totalAmountPaid += $loanPaid;
 }
 
-$activeLoans     = count($activeLoansData);
+$activeLoans  = count($activeLoansData);
 
 $current_page = basename($_SERVER['PHP_SELF']);
 function navButtonClass($page, $current_page) {
@@ -313,7 +327,6 @@ function navButtonClass($page, $current_page) {
     text-align: center;
   }
 }
-
 .dt-buttons {
   margin-bottom: 1rem;
 }
@@ -325,6 +338,36 @@ function navButtonClass($page, $current_page) {
 </style>
 </head>
 <body class="bg-gray-100 font-sans">
+<?php if (!empty($SHOW_RESTRICT_OVERLAY)): ?>
+<div class="rbac-overlay">
+  <div class="rbac-card">
+    <h2>Access Restricted</h2>
+    <p>The Finance role only has access to <strong>Loan Management</strong>.</p>
+    <a class="rbac-button" href="admin_loan.php">Go to Loan Management</a>
+  </div>
+</div>
+<style>
+  html, body { filter: grayscale(100%); }
+  .rbac-overlay {
+    position: fixed; inset: 0; background: rgba(255,255,255,0.9);
+    z-index: 9999; display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(3px);
+  }
+  .rbac-card {
+    background: white; border: 2px solid #ccc; border-radius: 12px;
+    padding: 2rem; text-align: center; max-width: 400px;
+  }
+  .rbac-button {
+    display: inline-block; margin-top: 1rem; padding: .75rem 1.25rem;
+    border-radius: 8px; background: #212529; color: #fff; text-decoration: none;
+  }
+</style>
+<script>
+document.addEventListener('click', e => {
+  if (!e.target.closest('.rbac-card')) e.preventDefault();
+}, true);
+</script>
+<?php endif; ?>
 <div class="flex h-screen overflow-hidden">
 <!-- Sidebar -->
 <div id="sidebar" class="w-64 bg-black text-white flex flex-col transition-all duration-300 ease-in-out">
@@ -337,19 +380,32 @@ function navButtonClass($page, $current_page) {
     </button>
   </div>
   <nav class="flex-1 p-4 space-y-2">
-    <button onclick="window.location.href='admindashboard.php'"
-      class="w-full text-left px-4 py-3 rounded-lg flex items-center space-x-3 <?= navButtonClass('admindashboard.php', $current_page) ?>">
-      <i class="bi bi-people"></i><span class="nav-text">Payslip Management</span>
-    </button>
-    <button onclick="window.location.href='admin_loan.php'"
-      class="w-full text-left px-4 py-3 rounded-lg flex items-center space-x-3 <?= navButtonClass('admin_loan.php', $current_page) ?>">
-      <i class="bi bi-cash-stack"></i><span class="nav-text">Track Loans</span>
-    </button>
-    <button onclick="window.location.href='activity_logs.php'"
-      class="w-full text-left px-4 py-3 rounded-lg flex items-center space-x-3 <?= navButtonClass('activity_logs.php', $current_page) ?>">
-      <i class="bi bi-clock-history"></i><span class="nav-text">Recent Activities</span>
-    </button>
-  </nav>
+  <?php
+  function navButton($href, $icon, $label, $page, $ROLE, $ALLOWED, $current_page) {
+      $disabled = ($ROLE === 'finance' && !in_array($page, $ALLOWED));
+      $isActive = ($current_page === $page);
+      $classes = "w-full text-left px-4 py-3 rounded-lg flex items-center space-x-3 ";
+      $classes .= $isActive ? "bg-gray-800 text-white font-semibold " : "bg-transparent text-white ";
+      if ($disabled) $classes .= "opacity-50 cursor-not-allowed pointer-events-none bg-gray-700 text-gray-400";
+
+      $onclick = $disabled ? "" : "onclick=\"window.location.href='$href'\"";
+      $tooltip = $disabled ? "title='Access restricted for Finance role'" : "";
+
+      echo "<button $onclick $tooltip class='$classes'>
+              <i class='bi $icon'></i><span class='nav-text'>$label</span>
+            </button>";
+  }
+
+  // Define what Finance can access
+  $FINANCE_ALLOWED = ['admin_loan.php', 'activity_logs.php'];
+
+  // Render buttons
+  navButton('admindashboard.php', 'bi-people', 'Payslip Management', 'admindashboard.php', $ROLE, $FINANCE_ALLOWED, $current_page);
+  navButton('admin_loan.php', 'bi-cash-stack', 'Track Loans', 'admin_loan.php', $ROLE, $FINANCE_ALLOWED, $current_page);
+  navButton('activity_logs.php', 'bi-clock-history', 'Recent Activities', 'activity_logs.php', $ROLE, $FINANCE_ALLOWED, $current_page);
+  ?>
+</nav>
+
   <div class="p-4 border-t border-gray-700">
     <a href="logout.php" class="w-full block px-4 py-3 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center space-x-3">
       <i class="bi bi-box-arrow-right"></i><span class="nav-text">Log Out</span>
@@ -405,10 +461,10 @@ function navButtonClass($page, $current_page) {
           <td class="p-3"><?= htmlspecialchars($loan['employee_id']) ?></td>
           <td class="p-3"><?= htmlspecialchars($loan['subsidiary']) ?></td>
           <td class="p-3"><?= htmlspecialchars($loan['loan_type']) ?></td>
-          <td class="p-3 font-medium text-gray-800">₱<?= number_format($loan['loan_amount'], 2) ?></td>
+          <td class="p-3"><?= number_format($loan['loan_amount'], 2) ?></td>
           <td class="p-3"><?= htmlspecialchars($loan['payment_terms']) ?></td>
-          <td class="p-3 text-gray-700">₱<?= number_format($loan['payment_amount'], 2) ?></td>
-          <td class="p-3 text-gray-700">₱<?= number_format($loan['balance'] ?? 0, 2) ?></td>
+          <td class="p-3 text-gray-700"><?= number_format($loan['payment_amount'], 2) ?></td>
+          <td class="p-3 text-gray-700"><?= number_format($loan['balance'] ?? 0, 2) ?></td>
           <td class="p-3">
             <span class="px-3 py-1 rounded-full text-white text-xs 
               <?= $loan['status']==='active'?'bg-blue-600':
@@ -468,6 +524,16 @@ function navButtonClass($page, $current_page) {
             <option value="paid">Paid</option>
           </select>
         </div>
+        <div class="col-span-2">
+  <label class="text-sm">Release Date</label>
+  <input type="date" id="edit_release_date" name="release_date" class="w-full border rounded p-2">
+</div>
+
+<div class="col-span-2">
+  <label class="text-sm">Release Notes</label>
+  <textarea id="edit_release_notes" name="release_notes" class="w-full border rounded p-2"></textarea>
+</div>
+
       </div>
       <div class="flex justify-end mt-4 space-x-2">
         <button type="button" id="cancelEdit" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">Cancel</button>
@@ -529,6 +595,9 @@ $(document).on('click', '.edit-btn', function() {
   $('#edit_end_date').val(loan.end_date || '');
   $('#edit_purpose').val(loan.purpose || '');
   $('#edit_status').val(loan.status || 'pending');
+  $('#edit_release_date').val(loan.release_date || '');
+  $('#edit_release_notes').val(loan.release_notes || '');
+
 });
 $('#cancelEdit').on('click', () => $('#editModal').addClass('hidden').removeClass('flex'));
 
@@ -614,7 +683,14 @@ function exportToExcel() {
   XLSX.utils.book_append_sheet(wb, ws, "Loans");
   XLSX.writeFile(wb, "Loan_Records.xlsx");
 }
+
+
+$('#edit_status').on('change', function() {
+  const showReleaseFields = $(this).val() === 'active';
+  $('#edit_release_date').closest('div').toggle(showReleaseFields);
+  $('#edit_release_notes').closest('div').toggle(showReleaseFields);
+}).trigger('change');
+
 </script>
 </body>
 </html>
-
