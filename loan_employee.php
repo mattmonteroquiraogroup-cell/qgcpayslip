@@ -1,14 +1,7 @@
 <?php
 session_start();
 require __DIR__ . '/vendor/autoload.php';
-require_once __DIR__ . '/temporary_block_page.php';
 use Dotenv\Dotenv;
-
-// Temporary block, remove after
-if (!$isLoanFeatureActive) {
-    echo "<script>alert('Loan requests are temporarily unavailable.'); window.location.href='employeedashboard.php';</script>";
-    exit();
-}
 
 // Restrict access to employees only
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'employee') {
@@ -54,8 +47,8 @@ $subsidiaryDisplayName = $subsidiaryFullNames[$subsidiary] ?? strtoupper($subsid
 $logoPath = $subsidiaryStyles[$subsidiary]['logo'] ?? 'qgc.png';
 $themeColor = $subsidiaryStyles[$subsidiary]['color'] ?? '#949494ff';
 
-//$dotenv = Dotenv::createImmutable(__DIR__);
-//$dotenv->load();
+$dotenv = Dotenv::createImmutable(__DIR__);
+$dotenv->load();
 
 $projectUrl = $_ENV['SUPABASE_URL'];
 $apiKey     = $_ENV['SUPABASE_KEY'];
@@ -248,6 +241,8 @@ body {
     margin-left: 4rem;
   }
 }
+
+
 </style>
 </head>
 <body class="bg-gradient-to-br from-gray-200 via-gray-300 to-gray-400 text-gray-900 font-sans">
@@ -325,6 +320,7 @@ body {
                         <th>Payment per Cutoff</th>
                         <th>Balance</th>
                         <th>Purpose</th>
+                        <th>Release Date</th>
                         <th>Status</th>
                     </tr>
                   </thead>
@@ -333,23 +329,29 @@ body {
                           <tr><td colspan="6" class="text-muted py-3">No loan requests found.</td></tr>
                       <?php else: ?>
                           <?php foreach ($loans as $loan): ?>
-                              <tr>
-                                  <td><?= htmlspecialchars($loan['loan_type'] ?? '—') ?></td>
-                                  <td>₱<?= number_format($loan['loan_amount'] ?? 0, 2) ?></td>
-                                  <td><?= htmlspecialchars($loan['payment_terms'] ?? '—') ?></td>
-                                  <td>₱<?= number_format($loan['payment_amount'] ?? 0, 2) ?></td>
-                                  <td>₱<?= number_format($loan['balance'] ?? 0, 2) ?></td>
-                                  <td class="text-start"><?= htmlspecialchars($loan['purpose'] ?? '—') ?></td>
-                                  <td>
-                                      <?php
-                                          $status = $loan['status'] ?? 'pending';
-                                          if ($status === 'paid') echo '<span class="badge bg-success px-2 py-1">Paid</span>';
-                                          elseif ($status === 'active') echo '<span class="badge bg-primary px-2 py-1">Active</span>';
-                                          else echo '<span class="badge bg-warning text-dark px-2 py-1">Pending</span>';
-                                      ?>
-                                  </td>
-                              </tr>
-                          <?php endforeach; ?>
+                          <tr>
+                              <td><?= htmlspecialchars($loan['loan_type'] ?? '—') ?></td>
+                              <td>₱<?= number_format($loan['loan_amount'] ?? 0, 2) ?></td>
+                              <td><?= htmlspecialchars($loan['payment_terms'] ?? '—') ?></td>
+                              <td>₱<?= number_format($loan['payment_amount'] ?? 0, 2) ?></td>
+                              <td>₱<?= number_format($loan['balance'] ?? 0, 2) ?></td>
+                              <td class="text-start"><?= htmlspecialchars($loan['purpose'] ?? '—') ?></td>
+
+                              <!-- Release Date + Notes -->
+                              <td title="<?= htmlspecialchars($loan['release_notes'] ?? '') ?>">
+                                <?= !empty($loan['release_date']) ? date('M d, Y', strtotime($loan['release_date'])) : '—' ?>
+                              </td>
+                              <!-- Existing Status Column -->
+                              <td>
+                                  <?php
+                                      $status = $loan['status'] ?? 'pending';
+                                      if ($status === 'paid') echo '<span class="badge bg-success px-2 py-1">Paid</span>';
+                                      elseif ($status === 'active') echo '<span class="badge bg-primary px-2 py-1">Active</span>';
+                                      else echo '<span class="badge bg-warning text-dark px-2 py-1">Pending</span>';
+                                  ?>
+                              </td>
+                          </tr>
+                      <?php endforeach; ?>
                       <?php endif; ?>
                   </tbody>
               </table>
@@ -519,6 +521,4 @@ window.addEventListener("pageshow", function (event) {
 </script>
 
 </body>
-
 </html>
-
